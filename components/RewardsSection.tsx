@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GlassCard } from './GlassCard';
 import { Gift, ExternalLink, Check } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { getActivePartners, platformConfig, type PartnerReward } from '../config/partners';
 import { useApi } from '../hooks/useApi';
 import type { ClaimRewardResponse, RewardStatusResponse } from '../types';

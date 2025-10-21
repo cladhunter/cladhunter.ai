@@ -5,7 +5,7 @@ import { BoostInfo } from './BoostInfo';
 import { AdModal } from './AdModal';
 import { RewardsSection } from './RewardsSection';
 import { Zap, Gift, Shield } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
