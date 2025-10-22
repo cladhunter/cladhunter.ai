@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GlassCard } from './GlassCard';
 import { Gift, ExternalLink, Check } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { getActivePartners, platformConfig, type PartnerReward } from '../config/partners';
 import { useApi } from '../hooks/useApi';
+import { useAuth } from '../hooks/useAuth';
 import type { ClaimRewardResponse, RewardStatusResponse } from '../types';
 import { hapticFeedback } from '../utils/telegram';
 
@@ -14,6 +15,7 @@ interface RewardsSectionProps {
 
 export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
   const { makeRequest } = useApi();
+  const { user } = useAuth();
   const [claimedPartners, setClaimedPartners] = useState<string[]>([]);
   const [claiming, setClaiming] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,13 +25,18 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
   // Load claimed rewards status
   useEffect(() => {
     loadRewardStatus();
-  }, []);
+  }, [user]);
 
   async function loadRewardStatus() {
+    if (!user) return;
+    
     try {
-      const response = await makeRequest<RewardStatusResponse>('/rewards/status', {
-        method: 'GET',
-      });
+      const response = await makeRequest<RewardStatusResponse>(
+        '/rewards/status',
+        { method: 'GET' },
+        user.accessToken,
+        user.id
+      );
 
       if (response?.data) {
         setClaimedPartners(response.data.claimed_partners);
@@ -42,7 +49,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
   }
 
   async function handleClaimReward(partner: PartnerReward) {
-    if (claimedPartners.includes(partner.id) || claiming) return;
+    if (claimedPartners.includes(partner.id) || claiming || !user) return;
 
     // First, open the partner link
     window.open(partner.url, '_blank');
@@ -53,14 +60,19 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
       setClaiming(partner.id);
 
       try {
-        const response = await makeRequest<ClaimRewardResponse>('/rewards/claim', {
-          method: 'POST',
-          body: JSON.stringify({ 
-            partner_id: partner.id,
-            partner_name: partner.name,
-            reward_amount: partner.reward,
-          }),
-        });
+        const response = await makeRequest<ClaimRewardResponse>(
+          '/rewards/claim',
+          {
+            method: 'POST',
+            body: JSON.stringify({ 
+              partner_id: partner.id,
+              partner_name: partner.name,
+              reward_amount: partner.reward,
+            }),
+          },
+          user.accessToken,
+          user.id
+        );
 
         if (response?.data) {
           setClaimedPartners(prev => [...prev, partner.id]);

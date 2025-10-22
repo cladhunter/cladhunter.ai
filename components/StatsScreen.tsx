@@ -2,44 +2,16 @@ import { useState, useEffect } from 'react';
 import { GlassCard } from './GlassCard';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { Button } from './ui/button';
-import { TrendingUp, Clock, Award } from 'lucide-react';
+import { TrendingUp, Clock, Award, Activity, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useApi } from '../hooks/useApi';
-
-interface StatsResponse {
-  total_energy: number;
-  total_watches: number;
-  total_earned: number;
-  today_watches: number;
-  daily_limit: number;
-  boost_level: number;
-  multiplier: number;
-  boost_expires_at: string | null;
-}
-
-const chartData = [
-  { day: 'Mon', cl: 12.5 },
-  { day: 'Tue', cl: 18.2 },
-  { day: 'Wed', cl: 15.8 },
-  { day: 'Thu', cl: 22.4 },
-  { day: 'Fri', cl: 19.6 },
-  { day: 'Sat', cl: 25.1 },
-  { day: 'Sun', cl: 21.3 },
-];
-
-const miningHistory = [
-  { amount: '+0.5', time: '13:42', adId: '0214', boost: false },
-  { amount: '+1.0', time: '13:28', adId: '0213', boost: true },
-  { amount: '+0.5', time: '12:55', adId: '0212', boost: false },
-  { amount: '+0.5', time: '12:14', adId: '0211', boost: false },
-  { amount: '+0.5', time: '11:38', adId: '0210', boost: false },
-  { amount: '+1.0', time: '11:02', adId: '0209', boost: true },
-];
+import type { UserStatsResponse } from '../types';
 
 export function StatsScreen() {
   const { user } = useAuth();
   const { makeRequest } = useApi();
-  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [stats, setStats] = useState<UserStatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
@@ -51,17 +23,45 @@ export function StatsScreen() {
   const fetchStats = async () => {
     if (!user) return;
 
-    const data = await makeRequest<StatsResponse>('/stats', { method: 'GET' }, user.accessToken, user.id);
+    setLoading(true);
+    const data = await makeRequest<UserStatsResponse>(
+      '/stats', 
+      { method: 'GET' }, 
+      user.accessToken, 
+      user.id
+    );
     if (data) {
       setStats(data);
     }
+    setLoading(false);
   };
 
   const totalMined = stats?.total_earned || 0;
   const totalWatches = stats?.total_watches || 0;
+  const totalSessions = stats?.total_sessions || 0;
   const todayWatches = stats?.today_watches || 0;
   const dailyLimit = stats?.daily_limit || 200;
   const avgPerAd = totalWatches > 0 ? totalMined / totalWatches : 0;
+
+  // Helper function to format time
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  // Helper function to format ad ID
+  const formatAdId = (adId: string) => {
+    // Extract last 4 characters or use full if shorter
+    return adId.slice(-4).toUpperCase();
+  };
+
+  if (loading) {
+    return (
+      <div className="px-4 pt-6 pb-24 min-h-screen flex items-center justify-center">
+        <p className="text-white/60 text-xs uppercase tracking-wider">Loading stats...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 pt-6 pb-24 min-h-screen">
@@ -79,78 +79,78 @@ export function StatsScreen() {
         </p>
       </GlassCard>
 
-      {/* Chart */}
-      <GlassCard className="p-3 mb-5 overflow-hidden">
-        <p className="text-white/80 text-xs uppercase tracking-wider mb-3">CL/DAY (7-DAY VIEW)</p>
-        <ResponsiveContainer width="100%" height={160}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-            <XAxis 
-              dataKey="day" 
-              stroke="rgba(255,255,255,0.4)"
-              tick={{ fontSize: 10 }}
-            />
-            <YAxis 
-              stroke="rgba(255,255,255,0.4)"
-              tick={{ fontSize: 10 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="cl"
-              stroke="#FF0033"
-              strokeWidth={2}
-              dot={{ fill: '#FF0033', r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </GlassCard>
-
-      {/* Metric Cards */}
-      <div className="grid grid-cols-3 gap-2 mb-5">
-        <GlassCard className="p-2.5 text-center">
-          <Clock size={14} className="text-[#FF0033] mx-auto mb-1.5" />
+      {/* Metric Cards Grid */}
+      <div className="grid grid-cols-2 gap-2 mb-5">
+        <GlassCard className="p-3 text-center">
+          <Activity size={16} className="text-[#FF0033] mx-auto mb-2" />
           <p className="text-[10px] uppercase text-white/60 mb-1">SESSIONS</p>
-          <p className="text-white">{totalWatches}</p>
+          <p className="text-white text-lg">{totalSessions}</p>
+          <p className="text-white/40 text-[9px] mt-1">Total logins</p>
         </GlassCard>
-        <GlassCard className="p-2.5 text-center">
-          <Award size={14} className="text-[#FF0033] mx-auto mb-1.5" />
-          <p className="text-[10px] uppercase text-white/60 mb-1">AVG</p>
-          <p className="text-white">{avgPerAd.toFixed(1)} 🆑</p>
+        
+        <GlassCard className="p-3 text-center">
+          <Zap size={16} className="text-[#FF0033] mx-auto mb-2" />
+          <p className="text-[10px] uppercase text-white/60 mb-1">ADS VIEWED</p>
+          <p className="text-white text-lg">{totalWatches}</p>
+          <p className="text-white/40 text-[9px] mt-1">All time</p>
         </GlassCard>
-        <GlassCard className="p-2.5 text-center">
-          <TrendingUp size={14} className="text-[#FF0033] mx-auto mb-1.5" />
-          <p className="text-[10px] uppercase text-white/60 mb-1">MULT</p>
-          <p className="text-white">x{stats?.multiplier || 1}</p>
+
+        <GlassCard className="p-3 text-center">
+          <Award size={16} className="text-[#FF0033] mx-auto mb-2" />
+          <p className="text-[10px] uppercase text-white/60 mb-1">AVG REWARD</p>
+          <p className="text-white text-lg">{avgPerAd.toFixed(1)} 🆑</p>
+          <p className="text-white/40 text-[9px] mt-1">Per ad</p>
+        </GlassCard>
+        
+        <GlassCard className="p-3 text-center">
+          <TrendingUp size={16} className="text-[#FF0033] mx-auto mb-2" />
+          <p className="text-[10px] uppercase text-white/60 mb-1">MULTIPLIER</p>
+          <p className="text-white text-lg">x{stats?.multiplier || 1}</p>
+          <p className="text-white/40 text-[9px] mt-1">Current boost</p>
         </GlassCard>
       </div>
 
       {/* Mining History */}
       <div className="mb-4">
-        <p className="text-white/60 text-xs uppercase tracking-wider mb-3">MINING SESSIONS</p>
-        <div className="space-y-2 max-h-[240px] overflow-y-auto">
-          {miningHistory.map((session, idx) => (
-            <GlassCard key={idx} className="p-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[#FF0033]">{session.amount} 🆑</span>
-                  <span className="text-white/40 text-xs">{session.time}</span>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-white/60 text-xs">#{session.adId}</p>
-                  <p className="text-[#FF0033] text-[10px] uppercase">
-                    {session.boost ? 'X2' : 'OK'}
-                  </p>
-                </div>
-              </div>
-            </GlassCard>
-          ))}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-white/60 text-xs uppercase tracking-wider">RECENT ACTIVITY</p>
+          <Clock size={12} className="text-white/40" />
         </div>
+        
+        {stats?.watch_history && stats.watch_history.length > 0 ? (
+          <div className="space-y-2 max-h-[320px] overflow-y-auto">
+            {stats.watch_history.map((session, idx) => (
+              <GlassCard key={idx} className="p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#FF0033]">+{session.reward} 🆑</span>
+                    <span className="text-white/40 text-xs">{formatTime(session.created_at)}</span>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-white/60 text-xs">#{formatAdId(session.ad_id)}</p>
+                    <p className="text-[#FF0033] text-[10px] uppercase">
+                      {session.multiplier > 1 ? `X${session.multiplier}` : 'BASE'}
+                    </p>
+                  </div>
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+        ) : (
+          <GlassCard className="p-8 text-center">
+            <Zap size={24} className="text-white/20 mx-auto mb-2" />
+            <p className="text-white/40 text-xs uppercase">No activity yet</p>
+            <p className="text-white/30 text-[10px] mt-1">Watch ads to see your history</p>
+          </GlassCard>
+        )}
       </div>
 
       {/* CTA Button */}
-      <Button className="w-full bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px] touch-manipulation">
-        GET MORE ADS TODAY
+      <Button 
+        onClick={() => window.location.hash = '#mining'}
+        className="w-full bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px] touch-manipulation"
+      >
+        START MINING NOW
       </Button>
     </div>
   );

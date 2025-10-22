@@ -3,7 +3,7 @@ import { GlassCard } from './GlassCard';
 import { Button } from './ui/button';
 import { TonConnectButton } from './TonConnectButton';
 import { Copy, Share2, Zap, TrendingUp, Shield, ArrowDownToLine, ArrowUpFromLine, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';

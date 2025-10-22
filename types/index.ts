@@ -71,11 +71,13 @@ export interface UserStatsResponse {
   total_energy: number;
   total_watches: number;
   total_earned: number;
+  total_sessions: number;
   today_watches: number;
   daily_limit: number;
   boost_level: number;
   multiplier: number;
   boost_expires_at: string | null;
+  watch_history: WatchLog[];
 }
 
 // Partner Rewards Types
