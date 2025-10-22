@@ -24,12 +24,25 @@ export function getAuthHeaders(accessToken?: string): HeadersInit {
   };
 }
 
-const fallbackApiBase = projectId
-  ? `https://${projectId}.supabase.co/functions/v1/make-server-0f597298`
-  : '';
+function resolveApiBaseUrl(): string {
+  const envApiBase = (import.meta.env?.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '');
 
-const configuredApiBase =
-  (import.meta.env?.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
-  fallbackApiBase;
+  if (envApiBase) {
+    return envApiBase;
+  }
 
-export const API_BASE_URL = configuredApiBase;
+  if (import.meta.env?.DEV) {
+    const localWorkerBase = 'http://127.0.0.1:8787/make-server-0f597298';
+    console.warn(
+      '[Cladhunter] VITE_API_BASE_URL is not set – defaulting to local Cloudflare worker at',
+      localWorkerBase,
+    );
+    return localWorkerBase;
+  }
+
+  throw new Error(
+    'VITE_API_BASE_URL is not configured. Set it to the Cloudflare Worker endpoint (including /make-server-0f597298).',
+  );
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();

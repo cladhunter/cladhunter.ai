@@ -74,3 +74,5 @@ VITE_API_BASE_URL=https://cladhunter-api.yourdomain.workers.dev/make-server-0f59
 ```
 
 The existing React hooks (`useApi`, `useUserData`, etc.) will automatically start using the worker once the environment variable is provided.
+
+> Since the Supabase fallback has been removed, omitting `VITE_API_BASE_URL` in production will break the app intentionally. This guarantees that all reads and writes happen against the D1 database you control. For local development the frontend defaults to `http://127.0.0.1:8787/make-server-0f597298` so you can run `wrangler dev` without additional configuration.

@@ -63,6 +63,8 @@ If you provisioned a Cloudflare D1 database, the repository ships with a compati
 
 Once deployed, set `VITE_API_BASE_URL` to the Worker URL (including `/make-server-0f597298`) in your Pages project so the React app calls the D1-backed API.
 
+> **Important:** The frontend no longer falls back to the Supabase edge function. If `VITE_API_BASE_URL` is missing in production builds the app will throw an error to avoid writing data to the Supabase KV table. During local development it automatically targets `http://127.0.0.1:8787/make-server-0f597298`, which matches `wrangler dev`.
+
 ---
 
 ## 📱 Demo
