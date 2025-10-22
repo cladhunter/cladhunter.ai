@@ -1,6 +1,9 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from './info';
 
+const API_ROUTE_PREFIX = '/make-server-0f597298';
+const LOCAL_WORKER_ORIGIN = 'http://127.0.0.1:8787';
+
 let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
 
 export function createClient() {
@@ -24,6 +27,15 @@ export function getAuthHeaders(accessToken?: string): HeadersInit {
   };
 }
 
+function buildSameOriginFallback(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const origin = window.location.origin.replace(/\/$/, '');
+  return `${origin}${API_ROUTE_PREFIX}`;
+}
+
 function resolveApiBaseUrl(): string {
   const envApiBase = (import.meta.env?.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '');
 
@@ -32,12 +44,22 @@ function resolveApiBaseUrl(): string {
   }
 
   if (import.meta.env?.DEV) {
-    const localWorkerBase = 'http://127.0.0.1:8787/make-server-0f597298';
+    const localWorkerBase = `${LOCAL_WORKER_ORIGIN}${API_ROUTE_PREFIX}`;
     console.warn(
       '[Cladhunter] VITE_API_BASE_URL is not set – defaulting to local Cloudflare worker at',
       localWorkerBase,
     );
     return localWorkerBase;
+  }
+
+  const sameOriginBase = buildSameOriginFallback();
+  if (sameOriginBase) {
+    console.warn(
+      '[Cladhunter] VITE_API_BASE_URL is not set – attempting same-origin worker at',
+      sameOriginBase,
+      'Set VITE_API_BASE_URL if your API lives on a different domain.',
+    );
+    return sameOriginBase;
   }
 
   throw new Error(

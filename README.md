@@ -61,9 +61,9 @@ If you provisioned a Cloudflare D1 database, the repository ships with a compati
 - Applying the schema from `cloudflare/schema.sql`
 - Deploying the worker so the frontend can talk to `VITE_API_BASE_URL`
 
-Once deployed, set `VITE_API_BASE_URL` to the Worker URL (including `/make-server-0f597298`) in your Pages project so the React app calls the D1-backed API.
+Once deployed, set `VITE_API_BASE_URL` to the Worker URL (including `/make-server-0f597298`) in your Pages project so the React app calls the D1-backed API. If you host the worker on the same domain as the frontend, the app now falls back to `${window.location.origin}/make-server-0f597298`, but setting `VITE_API_BASE_URL` is still recommended to avoid accidental cross-domain mismatches.
 
-> **Important:** The frontend no longer falls back to the Supabase edge function. If `VITE_API_BASE_URL` is missing in production builds the app will throw an error to avoid writing data to the Supabase KV table. During local development it automatically targets `http://127.0.0.1:8787/make-server-0f597298`, which matches `wrangler dev`.
+> **Important:** The frontend no longer falls back to the Supabase edge function. In production it attempts the same-origin worker route when `VITE_API_BASE_URL` is omitted, but you should still configure the variable when the API lives elsewhere. During local development it automatically targets `http://127.0.0.1:8787/make-server-0f597298`, which matches `wrangler dev`.
 
 ---
 
