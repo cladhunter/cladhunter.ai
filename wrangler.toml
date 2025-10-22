@@ -5,5 +5,13 @@ node_compat = true
 
 [[d1_databases]]
 binding = "DB"
+database_name = "cladhunter"
+database_id = "00000000-0000-0000-0000-000000000000" # replace with your staging database id
+preview_database_id = "00000000-0000-0000-0000-000000000000" # replace with your preview database id
+
+[env.production]
+
+[[env.production.d1_databases]]
+binding = "DB"
 database_name = "data_cladhunter"
 database_id = "ca08f9d1-440e-4673-8b43-dd6514fe8bef"
