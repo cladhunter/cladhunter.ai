@@ -191,22 +191,26 @@ async function logWatch(env: Bindings, params: {
     .run();
 }
 
+type WatchLogRow = {
+  user_id: string;
+  ad_id: string;
+  reward: number | null;
+  base_reward: number | null;
+  multiplier: number | null;
+  created_at: string;
+};
+
 async function getWatchHistory(env: Bindings, userId: string) {
   const { results } = await env.DB.prepare(
     'SELECT user_id, ad_id, reward, base_reward, multiplier, created_at FROM watch_logs WHERE user_id = ? ' +
       'ORDER BY datetime(created_at) DESC LIMIT 20',
   )
     .bind(userId)
-    .all<{
-      user_id: string;
-      ad_id: string;
-      reward: number | null;
-      base_reward: number | null;
-      multiplier: number | null;
-      created_at: string;
-    }>();
+    .all<WatchLogRow>();
 
-  return (results ?? []).map((row) => ({
+  const rows: WatchLogRow[] = results ?? [];
+
+  return rows.map((row) => ({
     user_id: row.user_id,
     ad_id: row.ad_id,
     reward: Number(row.reward ?? 0),
@@ -237,14 +241,18 @@ async function getTotalSessions(env: Bindings, userId: string): Promise<number> 
   return row ? Number(row.count) : 0;
 }
 
+type RewardClaimRow = { partner_id: string };
+
 async function getClaimedPartners(env: Bindings, userId: string): Promise<string[]> {
   const { results } = await env.DB.prepare(
     'SELECT partner_id FROM reward_claims WHERE user_id = ?',
   )
     .bind(userId)
-    .all<{ partner_id: string }>();
+    .all<RewardClaimRow>();
 
-  return (results ?? []).map((row) => String(row.partner_id));
+  const rows: RewardClaimRow[] = results ?? [];
+
+  return rows.map((row) => String(row.partner_id));
 }
 
 async function recordRewardClaim(env: Bindings, params: {
