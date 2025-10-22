@@ -522,7 +522,13 @@ app.post('/make-server-0f597298/orders/:orderId/confirm', async (c) => {
 
   await updateUser(c.env, user);
 
-  return c.json({ success: true, tx_hash: txHash });
+  return c.json({
+    success: true,
+    tx_hash: txHash,
+    boost_level: user.boost_level,
+    boost_expires_at: user.boost_expires_at,
+    multiplier: boostMultiplier(user.boost_level),
+  });
 });
 
 app.get('/make-server-0f597298/stats', async (c) => {
