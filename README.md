@@ -23,7 +23,7 @@
 - 💰 **Wallet Integration**: Manage balance and transactions
 - 📲 **Mobile-Optimized**: Safe area insets, touch targets, responsive design
 - 🎨 **Dark Futuristic Theme**: Glassmorphic UI with red accents
-- 🔐 **Secure Backend**: Supabase Edge Functions with authentication
+- 🔐 **Secure Backend**: Supabase Edge Functions or Cloudflare Workers with authentication
 - 🚀 **Production Ready**: Full API, data persistence, and error handling
 - 🔧 **Easy Config**: Simple files for adding partners and ads
 
@@ -52,6 +52,16 @@ npm run dev
 ```
 
 **📖 Full Setup Guide**: See [QUICKSTART.md](./QUICKSTART.md)
+
+### Option 3: Cloudflare Worker + D1 Backend
+
+If you provisioned a Cloudflare D1 database, the repository ships with a compatible Worker implementation. Review [cloudflare/README.md](./cloudflare/README.md) for:
+
+- Creating/binding the D1 database via `wrangler.toml`
+- Applying the schema from `cloudflare/schema.sql`
+- Deploying the worker so the frontend can talk to `VITE_API_BASE_URL`
+
+Once deployed, set `VITE_API_BASE_URL` to the Worker URL (including `/make-server-0f597298`) in your Pages project so the React app calls the D1-backed API.
 
 ---
 
@@ -82,9 +92,9 @@ Frontend (React + TypeScript + Tailwind)
     ↓
 API Layer (Custom Hooks + Fetch)
     ↓
-Backend (Supabase Edge Functions - Hono)
+Backend (Supabase Edge Functions - Hono / Cloudflare Worker + Hono)
     ↓
-Database (Supabase KV Store)
+Database (Supabase KV Store / Cloudflare D1)
     ↓
 Blockchain (TON - Future Integration)
 ```
@@ -105,9 +115,11 @@ Blockchain (TON - Future Integration)
 
 ### Backend
 - **Supabase** - Backend-as-a-Service
+- **Cloudflare Workers** - Optional edge runtime with D1 storage
 - **Hono** - Web framework for Edge Functions
 - **Deno** - Runtime environment
 - **KV Store** - Data persistence
+- **Cloudflare D1** - SQL persistence when running on Cloudflare
 
 ### Blockchain
 - **TON** - Payment infrastructure (to be integrated)
@@ -165,6 +177,9 @@ Blockchain (TON - Future Integration)
 │   ├── economy.ts            # Economy settings
 │   ├── partners.ts           # Partner rewards config ⭐ NEW
 │   └── ads.ts                # Ad creatives config
+├── cloudflare/           # Cloudflare Worker + D1 backend
+│   ├── worker.ts             # Hono worker mirroring Supabase API
+│   └── schema.sql            # SQL schema for D1
 ├── supabase/             # Backend code
 │   └── functions/server/
 │       └── index.tsx         # API endpoints (includes rewards API)
