@@ -20,7 +20,9 @@ export function useApi() {
       const headers = getAuthHeaders(accessToken || publicAnonKey);
 
       // Add X-User-ID header for anonymous users
-      const customHeaders: Record<string, string> = { ...headers };
+      const customHeaders: Record<string, string> = {
+        ...(headers as Record<string, string>),
+      };
       if (userId && (!accessToken || accessToken === '')) {
         customHeaders['X-User-ID'] = userId;
       }
