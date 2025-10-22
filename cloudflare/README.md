@@ -73,6 +73,6 @@ After deploy, set `VITE_API_BASE_URL` on the frontend (Cloudflare Pages, Vercel,
 VITE_API_BASE_URL=https://cladhunter-api.yourdomain.workers.dev/make-server-0f597298
 ```
 
-The existing React hooks (`useApi`, `useUserData`, etc.) will automatically start using the worker once the environment variable is provided.
+The existing React hooks (`useApi`, `useUserData`, etc.) will automatically start using the worker once the environment variable is provided. When the worker is mounted under the same domain as your Pages app, the frontend now falls back to `${window.location.origin}/make-server-0f597298` so deployments without the variable no longer fail hard. Still, define `VITE_API_BASE_URL` whenever the API lives on a different domain to avoid cross-origin issues.
 
-> Since the Supabase fallback has been removed, omitting `VITE_API_BASE_URL` in production will break the app intentionally. This guarantees that all reads and writes happen against the D1 database you control. For local development the frontend defaults to `http://127.0.0.1:8787/make-server-0f597298` so you can run `wrangler dev` without additional configuration.
+> Since the Supabase fallback has been removed, the app only ever talks to your Cloudflare worker. In production it will attempt the same-origin route if `VITE_API_BASE_URL` is missing, while local development continues to default to `http://127.0.0.1:8787/make-server-0f597298` so you can run `wrangler dev` without additional configuration.
