@@ -4,6 +4,10 @@ import { projectId, publicAnonKey } from './info';
 let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
 
 export function createClient() {
+  if (!projectId || !publicAnonKey) {
+    throw new Error('Supabase project configuration is missing.');
+  }
+
   if (!supabaseClient) {
     const supabaseUrl = `https://${projectId}.supabase.co`;
     supabaseClient = createSupabaseClient(supabaseUrl, publicAnonKey);
@@ -12,10 +16,20 @@ export function createClient() {
 }
 
 export function getAuthHeaders(accessToken?: string): HeadersInit {
+  const token = accessToken || publicAnonKey;
+
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${accessToken || publicAnonKey}`,
+    'Authorization': `Bearer ${token}`,
   };
 }
 
-export const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-0f597298`;
+const fallbackApiBase = projectId
+  ? `https://${projectId}.supabase.co/functions/v1/make-server-0f597298`
+  : '';
+
+const configuredApiBase =
+  (import.meta.env?.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
+  fallbackApiBase;
+
+export const API_BASE_URL = configuredApiBase;

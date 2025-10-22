@@ -2,7 +2,7 @@ import { useTonConnect } from '../hooks/useTonConnect';
 import { Button } from './ui/button';
 import { Wallet, LogOut, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export function TonConnectButton() {
   const { wallet, isConnecting, connect, disconnect, isConnected } = useTonConnect();
