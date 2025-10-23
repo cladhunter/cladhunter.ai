@@ -5,13 +5,12 @@ import { BoostInfo } from './BoostInfo';
 import { AdModal } from './AdModal';
 import { RewardsSection } from './RewardsSection';
 import { Zap, Gift, Shield } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
 import { boostMultiplier } from '../config/economy';
 import { getRandomAd, type AdCreative } from '../config/ads';
-import { trackClick } from '../lib/trackClick';
 
 interface AdResponse {
   id: string;
@@ -30,7 +29,7 @@ interface AdCompleteResponse {
 
 export function MiningScreen() {
   const { user } = useAuth();
-  const { userData, refreshBalance, balance: realtimeBalance, updateBalance } = useUserData();
+  const { userData, refreshBalance } = useUserData();
   const { makeRequest } = useApi();
   
   const [isMining, setIsMining] = useState(false);
@@ -39,13 +38,6 @@ export function MiningScreen() {
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [currentAdCreative, setCurrentAdCreative] = useState<AdCreative | null>(null);
-
-  const handleRewardClaimed = (newBalance?: number) => {
-    if (typeof newBalance === 'number') {
-      updateBalance(newBalance);
-    }
-    void refreshBalance();
-  };
 
   // Cooldown timer
   useEffect(() => {
@@ -107,15 +99,7 @@ export function MiningScreen() {
     if (result) {
       const multiplierText = result.multiplier > 1 ? ` (x${result.multiplier})` : '';
       toast.success(`+${result.reward} 🆑 mined successfully${multiplierText}!`);
-
-      updateBalance(result.new_balance);
-      void trackClick('ad_watch_completed', {
-        adId,
-        reward: result.reward,
-        newBalance: result.new_balance,
-        multiplier: result.multiplier,
-      });
-
+      
       // Refresh balance
       await refreshBalance();
       
@@ -140,7 +124,7 @@ export function MiningScreen() {
   };
 
   const currentMultiplier = userData ? boostMultiplier(userData.boost_level) : 1;
-  const currentBalance = realtimeBalance ?? userData?.energy ?? 0;
+  const balance = userData?.energy || 0;
 
   const boostCards = [
     { icon: Zap, label: 'X2 REWARD', duration: '15 MIN', premium: true },
@@ -156,7 +140,7 @@ export function MiningScreen() {
           CLADHUNTER 🆑
         </h1>
         <p className="text-white/60 tracking-wide uppercase">
-          BALANCE: {currentBalance.toFixed(1)} 🆑
+          BALANCE: {balance.toFixed(1)} 🆑
         </p>
         {currentMultiplier > 1 && (
           <p className="text-[#FF0033] text-xs mt-1">
@@ -297,7 +281,7 @@ export function MiningScreen() {
 
       {/* Partner Rewards Section */}
       <div className="w-full mt-6">
-        <RewardsSection onRewardClaimed={handleRewardClaimed} />
+        <RewardsSection onRewardClaimed={refreshBalance} />
       </div>
 
       {/* Ad Modal */}

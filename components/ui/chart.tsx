@@ -1,8 +1,7 @@
-// @ts-nocheck
 "use client";
 
 import * as React from "react";
-import * as RechartsPrimitive from "recharts";
+import * as RechartsPrimitive from "recharts@2.15.2";
 
 import { cn } from "./utils";
 

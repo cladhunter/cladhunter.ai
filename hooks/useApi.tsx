@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { getApiBaseUrls, getAuthHeaders } from '../lib/supabase';
+import { API_BASE_URL, getAuthHeaders } from '../utils/supabase/client';
 import { publicAnonKey } from '../utils/supabase/info';
 
 export function useApi() {
@@ -15,101 +15,32 @@ export function useApi() {
     setLoading(true);
     setError(null);
 
-    const { primary, fallback } = getApiBaseUrls();
-
-    const executeRequest = async (baseUrl: string | null, retryOnError: boolean) => {
-      if (!baseUrl) {
-        return {
-          ok: false,
-          message: 'API base URL is not configured',
-          shouldRetry: retryOnError,
-        } as const;
-      }
-
-      try {
-        const headers = getAuthHeaders(accessToken || publicAnonKey);
-
-        const customHeaders: Record<string, string> = {
-          ...(headers as Record<string, string>),
-        };
-        if (userId && (!accessToken || accessToken === '')) {
-          customHeaders['X-User-ID'] = userId;
-        }
-
-        const response = await fetch(`${baseUrl}${endpoint}`, {
-          ...options,
-          headers: {
-            ...customHeaders,
-            ...options.headers,
-          },
-        });
-
-        const rawBody = await response.text();
-        let parsedBody: unknown = null;
-
-        if (rawBody.length > 0) {
-          try {
-            parsedBody = JSON.parse(rawBody);
-          } catch {
-            parsedBody = rawBody;
-          }
-        }
-
-        if (!response.ok) {
-          const responseError =
-            typeof parsedBody === 'object' && parsedBody !== null && 'error' in parsedBody
-              ? String((parsedBody as { error?: unknown }).error)
-              : `Request failed with status ${response.status}`;
-
-          const shouldRetry = retryOnError && [401, 403, 404].includes(response.status);
-
-          return {
-            ok: false,
-            message: responseError,
-            shouldRetry,
-          } as const;
-        }
-
-        return {
-          ok: true,
-          data: parsedBody as T,
-        } as const;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        return {
-          ok: false,
-          message: errorMessage,
-          shouldRetry: retryOnError,
-        } as const;
-      }
-    };
-
     try {
-      const primaryResult = await executeRequest(primary, Boolean(fallback));
+      const url = `${API_BASE_URL}${endpoint}`;
+      const headers = getAuthHeaders(accessToken || publicAnonKey);
 
-      if (primaryResult.ok) {
-        setLoading(false);
-        return primaryResult.data;
+      // Add X-User-ID header for anonymous users
+      const customHeaders: Record<string, string> = { ...headers };
+      if (userId && (!accessToken || accessToken === '')) {
+        customHeaders['X-User-ID'] = userId;
       }
 
-      if (primaryResult.shouldRetry && fallback && fallback !== primary) {
-        const fallbackResult = await executeRequest(fallback, false);
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...customHeaders,
+          ...options.headers,
+        },
+      });
 
-        if (fallbackResult.ok) {
-          setLoading(false);
-          return fallbackResult.data;
-        }
+      const data = await response.json();
 
-        setError(fallbackResult.message);
-        setLoading(false);
-        console.error(`API Error (${endpoint} via fallback):`, fallbackResult.message);
-        return null;
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed with status ${response.status}`);
       }
 
-      setError(primaryResult.message);
-      console.error(`API Error (${endpoint}):`, primaryResult.message);
       setLoading(false);
-      return null;
+      return data as T;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       console.error(`API Error (${endpoint}):`, errorMessage);

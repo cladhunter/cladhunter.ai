@@ -2,16 +2,15 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GlassCard } from './GlassCard';
 import { Gift, ExternalLink, Check } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { getActivePartners, platformConfig, type PartnerReward } from '../config/partners';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
 import type { ClaimRewardResponse, RewardStatusResponse } from '../types';
 import { hapticFeedback } from '../utils/telegram';
-import { trackClick } from '../lib/trackClick';
 
 interface RewardsSectionProps {
-  onRewardClaimed?: (newBalance?: number) => void;
+  onRewardClaimed?: () => void;
 }
 
 export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
@@ -39,8 +38,8 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
         user.id
       );
 
-      if (response) {
-        setClaimedPartners(response.claimed_partners);
+      if (response?.data) {
+        setClaimedPartners(response.data.claimed_partners);
       }
     } catch (error) {
       console.error('Failed to load reward status:', error);
@@ -65,7 +64,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           '/rewards/claim',
           {
             method: 'POST',
-            body: JSON.stringify({
+            body: JSON.stringify({ 
               partner_id: partner.id,
               partner_name: partner.name,
               reward_amount: partner.reward,
@@ -75,26 +74,25 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           user.id
         );
 
-        if (response) {
+        if (response?.data) {
           setClaimedPartners(prev => [...prev, partner.id]);
           toast.success(
-            `🎉 ${response.reward} 🆑 earned!`,
+            `🎉 ${response.data.reward} 🆑 earned!`,
             {
-              description: `Thanks for subscribing to ${response.partner_name}!`,
+              description: `Thanks for subscribing to ${response.data.partner_name}!`,
             }
           );
           hapticFeedback('notification', 'success');
 
           // Refresh balance via callback
           if (onRewardClaimed) {
-            onRewardClaimed(response.new_balance);
+            onRewardClaimed();
           }
-
-          void trackClick('partner_reward_claimed', {
-            partnerId: partner.id,
-            reward: response.reward,
-            newBalance: response.new_balance,
+        } else if (response?.error) {
+          toast.error('Failed to claim reward', {
+            description: response.error,
           });
+          hapticFeedback('notification', 'error');
         }
       } catch (error) {
         console.error('Error claiming reward:', error);
