@@ -1,6 +1,11 @@
 -- Core relational schema for Cladhunter
 -- Users, sessions, ad watches, orders and rewards migrated from kv_store
 
+create table if not exists public.kv_store_0f597298 (
+  key text primary key,
+  value jsonb not null
+);
+
 create table if not exists public.profiles (
   id text primary key,
   energy integer not null default 0,
