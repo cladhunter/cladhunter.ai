@@ -1,5 +1,5 @@
 import { useTonConnectUI, useTonWallet, useTonAddress } from '@tonconnect/ui-react';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 export interface TonWallet {
   address: string;
@@ -11,6 +11,7 @@ export function useTonConnect() {
   const [tonConnectUI] = useTonConnectUI();
   const tonWallet = useTonWallet();
   const userFriendlyAddress = useTonAddress();
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const wallet: TonWallet | null = tonWallet
     ? {
@@ -21,11 +22,14 @@ export function useTonConnect() {
     : null;
 
   const connect = useCallback(async () => {
+    setIsConnecting(true);
     try {
       await tonConnectUI.openModal();
     } catch (error) {
       console.error('Failed to connect wallet:', error);
       throw error;
+    } finally {
+      setIsConnecting(false);
     }
   }, [tonConnectUI]);
 
@@ -72,7 +76,7 @@ export function useTonConnect() {
 
   return {
     wallet,
-    isConnecting: false, // TonConnectUI handles this internally
+    isConnecting,
     connect,
     disconnect,
     sendTransaction,

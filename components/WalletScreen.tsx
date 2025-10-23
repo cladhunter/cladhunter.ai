@@ -37,7 +37,7 @@ export function WalletScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
   const { makeRequest } = useApi();
-  const { sendTransaction, isConnected } = useTonConnect();
+  const { sendTransaction, isConnected, wallet } = useTonConnect();
   
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
@@ -47,8 +47,19 @@ export function WalletScreen() {
   const balanceInTon = energyToTon(balance);
   const currentBoostLevel = userData?.boost_level || 0;
 
-  const handleCopyAddress = () => {
-    toast.success('Address copied to clipboard!');
+  const handleCopyAddress = async () => {
+    if (!wallet) {
+      toast.error('Connect your TON wallet to copy the address.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(wallet.address);
+      toast.success('Address copied to clipboard!');
+    } catch (error) {
+      console.error('Failed to copy wallet address:', error);
+      toast.error('Unable to copy address. Please try again.');
+    }
   };
 
   const handleShareLink = () => {
