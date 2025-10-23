@@ -17,20 +17,25 @@ export function useApi() {
 
     try {
       const url = `${API_BASE_URL}${endpoint}`;
-      const headers = getAuthHeaders(accessToken || publicAnonKey);
+      const baseHeaders = new Headers(
+        getAuthHeaders(accessToken || publicAnonKey),
+      );
 
-      // Add X-User-ID header for anonymous users
-      const customHeaders: Record<string, string> = { ...headers };
       if (userId && (!accessToken || accessToken === '')) {
-        customHeaders['X-User-ID'] = userId;
+        baseHeaders.set('X-User-ID', userId);
+      }
+
+      const requestHeaders = new Headers(baseHeaders);
+      if (options.headers) {
+        const optionHeaders = new Headers(options.headers);
+        optionHeaders.forEach((value, key) => {
+          requestHeaders.set(key, value);
+        });
       }
 
       const response = await fetch(url, {
         ...options,
-        headers: {
-          ...customHeaders,
-          ...options.headers,
-        },
+        headers: requestHeaders,
       });
 
       const data = await response.json();
