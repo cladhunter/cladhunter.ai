@@ -40,6 +40,32 @@ if (missingEnvVars.length > 0) {
   }
 }
 
+const envFunctionBaseUrl = (import.meta.env.NEXT_PUBLIC_SUPABASE_FUNCTION_URL as string | undefined) ?? (import.meta.env.VITE_SUPABASE_FUNCTION_URL as string | undefined) ?? undefined;
+const envFunctionProxyUrl = (import.meta.env.NEXT_PUBLIC_SUPABASE_FUNCTION_PROXY_URL as string | undefined) ?? (import.meta.env.VITE_SUPABASE_FUNCTION_PROXY_URL as string | undefined) ?? undefined;
+
+function resolveFunctionBaseUrl(): string {
+  if (envFunctionBaseUrl && envFunctionBaseUrl.trim().length > 0) {
+    return normalizeUrl(envFunctionBaseUrl);
+  }
+
+  return `${supabaseUrl}/functions/v1/make-server-0f597298`;
+}
+
+function resolveFunctionProxyUrl(): string | null {
+  if (envFunctionProxyUrl && envFunctionProxyUrl.trim().length > 0) {
+    return normalizeUrl(envFunctionProxyUrl);
+  }
+
+  const isBrowser = typeof window !== 'undefined';
+  const isVercelRuntime = typeof process !== 'undefined' && Boolean(process.env.VERCEL);
+
+  if (isBrowser || isVercelRuntime) {
+    return '/api/make-server-0f597298';
+  }
+
+  return null;
+}
+
 let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null;
 
 export function createClient() {
@@ -56,4 +82,11 @@ export function getAuthHeaders(accessToken?: string): HeadersInit {
   };
 }
 
-export const API_BASE_URL = `${supabaseUrl}/functions/v1/make-server-0f597298`;
+export function getApiBaseUrls() {
+  return {
+    primary: resolveFunctionBaseUrl(),
+    fallback: resolveFunctionProxyUrl(),
+  } as const;
+}
+
+export const API_BASE_URL = resolveFunctionBaseUrl();
