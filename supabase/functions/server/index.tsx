@@ -54,9 +54,30 @@ function boostMultiplier(level: number): number {
 const BASE_AD_REWARD = 10;
 
 // Initialize Supabase client
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const supabaseUrl = Deno.env.get('SUPABASE_URL');
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const missingSupabaseEnvVars: string[] = [];
+
+if (!supabaseUrl) {
+  missingSupabaseEnvVars.push('SUPABASE_URL');
+}
+
+if (!supabaseServiceKey) {
+  missingSupabaseEnvVars.push('SUPABASE_SERVICE_ROLE_KEY');
+}
+
+const supabaseConfigErrorMessage = missingSupabaseEnvVars.length
+  ? `Supabase configuration error: missing environment variables: ${missingSupabaseEnvVars.join(', ')}`
+  : null;
+
+if (supabaseConfigErrorMessage) {
+  console.error(supabaseConfigErrorMessage);
+}
+
+const supabase =
+  supabaseUrl && supabaseServiceKey
+    ? createClient(supabaseUrl, supabaseServiceKey)
+    : null;
 
 function mapProfile(record: any): User {
   return {
@@ -86,7 +107,7 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
   }
   
   // For authenticated users, verify the token
-  const { data, error } = await supabase.auth.getUser(token);
+  const { data, error } = await supabase!.auth.getUser(token);
   
   if (error || !data.user) return null;
   return { id: data.user.id };
@@ -94,7 +115,7 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
 
 // Helper to get or create user
 async function getOrCreateUser(userId: string): Promise<User> {
-  const { data, error } = await supabase
+  const { data, error } = await supabase!
     .from('profiles')
     .select('*')
     .eq('id', userId)
@@ -108,7 +129,7 @@ async function getOrCreateUser(userId: string): Promise<User> {
     return mapProfile(data);
   }
 
-  const { data: created, error: createError } = await supabase
+  const { data: created, error: createError } = await supabase!
     .from('profiles')
     .insert({ id: userId })
     .select()
@@ -123,7 +144,7 @@ async function getOrCreateUser(userId: string): Promise<User> {
 
 // Helper to update user
 async function updateUser(user: User): Promise<void> {
-  const { error } = await supabase
+  const { error } = await supabase!
     .from('profiles')
     .update({
       energy: user.energy,
@@ -137,6 +158,19 @@ async function updateUser(user: User): Promise<void> {
     throw new Error(`Failed to update user: ${error.message}`);
   }
 }
+
+// Ensure Supabase is configured before handling requests
+app.use('*', async (c, next) => {
+  if (!supabase) {
+    console.error(
+      supabaseConfigErrorMessage ??
+        'Supabase configuration error: missing Supabase configuration',
+    );
+    return c.json({ error: 'Server misconfigured...' }, 500);
+  }
+
+  return next();
+});
 
 // Enable logger
 app.use('*', logger(console.log));
@@ -177,7 +211,7 @@ app.post("/make-server-0f597298/user/init", async (c) => {
     }
     
     // Track session
-    const { error: sessionError } = await supabase
+    const { error: sessionError } = await supabase!
       .from('sessions')
       .insert({
         user_id: authUser.id,
@@ -286,7 +320,7 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     const endOfDay = new Date(startOfDay);
     endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
 
-    const { count: dailyCount, error: dailyCountError } = await supabase
+    const { count: dailyCount, error: dailyCountError } = await supabase!
       .from('ad_watches')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', authUser.id)
@@ -314,7 +348,7 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     user.last_watch_at = watchTimestamp;
     await updateUser(user);
 
-    const { error: watchInsertError } = await supabase
+    const { error: watchInsertError } = await supabase!
       .from('ad_watches')
       .insert({
         user_id: authUser.id,
@@ -368,7 +402,7 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
     const payload = `boost_${boost_level}_${authUser.id}_${Date.now()}`;
     
     const orderCreatedAt = new Date().toISOString();
-    const { error: orderInsertError } = await supabase
+    const { error: orderInsertError } = await supabase!
       .from('orders')
       .insert({
         id: orderId,
@@ -414,7 +448,7 @@ app.get("/make-server-0f597298/orders/:orderId", async (c) => {
     }
     
     const orderId = c.req.param('orderId');
-    const { data: order, error: orderError } = await supabase
+    const { data: order, error: orderError } = await supabase!
       .from('orders')
       .select('*')
       .eq('id', orderId)
@@ -457,7 +491,7 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
     }
     
     const orderId = c.req.param('orderId');
-    const { data: order, error: orderError } = await supabase
+    const { data: order, error: orderError } = await supabase!
       .from('orders')
       .select('*')
       .eq('id', orderId)
@@ -491,7 +525,7 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
     //   return c.json({ error: 'Transaction verification failed' }, 400);
     // }
     
-    const { error: orderUpdateError } = await supabase
+    const { error: orderUpdateError } = await supabase!
       .from('orders')
       .update({
         status: 'paid',
@@ -541,7 +575,7 @@ app.get("/make-server-0f597298/stats", async (c) => {
     
     const user = await getOrCreateUser(authUser.id);
     
-    const { data: watchStats, error: watchStatsError } = await supabase
+    const { data: watchStats, error: watchStatsError } = await supabase!
       .from('v_user_watch_stats')
       .select('total_watches, total_reward')
       .eq('user_id', authUser.id)
@@ -554,7 +588,7 @@ app.get("/make-server-0f597298/stats", async (c) => {
     const totalWatches = watchStats?.total_watches ? Number(watchStats.total_watches) : 0;
     const totalEarned = watchStats?.total_reward ? Number(watchStats.total_reward) : 0;
 
-    const { data: watchHistoryData, error: watchHistoryError } = await supabase
+    const { data: watchHistoryData, error: watchHistoryError } = await supabase!
       .from('ad_watches')
       .select('user_id, ad_id, reward, base_reward, multiplier, created_at')
       .eq('user_id', authUser.id)
@@ -574,7 +608,7 @@ app.get("/make-server-0f597298/stats", async (c) => {
       created_at: log.created_at,
     }));
 
-    const { count: sessionCount, error: sessionCountError } = await supabase
+    const { count: sessionCount, error: sessionCountError } = await supabase!
       .from('sessions')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', authUser.id);
@@ -588,7 +622,7 @@ app.get("/make-server-0f597298/stats", async (c) => {
     const endOfDay = new Date(startOfDay);
     endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
 
-    const { count: todayCount, error: todayCountError } = await supabase
+    const { count: todayCount, error: todayCountError } = await supabase!
       .from('ad_watches')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', authUser.id)
@@ -629,7 +663,7 @@ app.get("/make-server-0f597298/rewards/status", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
-    const { data: claimedRewards, error: claimedError } = await supabase
+    const { data: claimedRewards, error: claimedError } = await supabase!
       .from('reward_claims')
       .select('partner_id')
       .eq('user_id', authUser.id);
@@ -667,7 +701,7 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     }
     
     // Check if already claimed
-    const { data: existingClaim, error: existingClaimError } = await supabase
+    const { data: existingClaim, error: existingClaimError } = await supabase!
       .from('reward_claims')
       .select('id')
       .eq('user_id', authUser.id)
@@ -699,7 +733,7 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     
     // Record claim
     const claimedAt = new Date().toISOString();
-    const { error: claimInsertError } = await supabase
+    const { error: claimInsertError } = await supabase!
       .from('reward_claims')
       .insert({
         user_id: authUser.id,
@@ -713,7 +747,7 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
       return c.json({ error: 'Failed to claim reward' }, 500);
     }
 
-    const { error: rewardLogError } = await supabase
+    const { error: rewardLogError } = await supabase!
       .from('reward_logs')
       .insert({
         user_id: authUser.id,
