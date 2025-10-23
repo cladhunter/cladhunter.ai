@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -192,8 +196,6 @@ html {
 }
 
 /* Cladhunter Custom Styles */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
-
 body {
   font-family: 'Orbitron', 'Inter Tight', system-ui, -apple-system, sans-serif;
   overscroll-behavior: none;
@@ -262,5 +264,11 @@ body {
   /* Better button tap targets for mobile */
   button {
     min-height: 44px; /* iOS Human Interface Guidelines */
+  }
+}
+
+@layer utilities {
+  .outline-ring\/50 {
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
   }
 }
