@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './useAuth';
 import { useApi } from './useApi';
+import { useRealtimeBalance } from './useRealtimeBalance';
 
 export interface UserData {
   id: string;
@@ -13,10 +14,23 @@ export function useUserData() {
   const { user } = useAuth();
   const { makeRequest } = useApi();
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  const {
+    balance,
+    loading: balanceLoading,
+    error: balanceError,
+    updateBalance,
+  } = useRealtimeBalance(user?.id ?? null);
 
   const fetchUserData = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setUserData(null);
+      setProfileLoading(false);
+      return;
+    }
+
+    setProfileLoading(true);
 
     const data = await makeRequest<{ user: UserData }>(
       '/user/init',
@@ -27,9 +41,10 @@ export function useUserData() {
 
     if (data) {
       setUserData(data.user);
+      updateBalance(data.user.energy);
     }
-    setLoading(false);
-  }, [user, makeRequest]);
+    setProfileLoading(false);
+  }, [user, makeRequest, updateBalance]);
 
   const refreshBalance = useCallback(async () => {
     if (!user) return;
@@ -41,19 +56,53 @@ export function useUserData() {
       boost_expires_at: string | null;
     }>('/user/balance', { method: 'GET' }, user.accessToken, user.id);
 
-    if (data && userData) {
-      setUserData({
-        ...userData,
-        energy: data.energy,
-        boost_level: data.boost_level,
-        boost_expires_at: data.boost_expires_at,
+    if (data) {
+      setUserData(prev => {
+        if (!prev) {
+          return prev;
+        }
+        return {
+          ...prev,
+          energy: data.energy,
+          boost_level: data.boost_level,
+          boost_expires_at: data.boost_expires_at,
+        };
       });
+      updateBalance(data.energy);
     }
-  }, [user, userData, makeRequest]);
+  }, [user, makeRequest, updateBalance]);
 
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
 
-  return { userData, loading, refreshBalance };
+  useEffect(() => {
+    if (!userData) return;
+
+    setUserData(prev => {
+      if (!prev) {
+        return prev;
+      }
+
+      if (prev.energy === balance) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        energy: balance,
+      };
+    });
+  }, [balance, userData]);
+
+  const loading = useMemo(() => profileLoading || balanceLoading, [profileLoading, balanceLoading]);
+
+  return {
+    userData,
+    loading,
+    refreshBalance,
+    balance,
+    balanceError,
+    updateBalance,
+  };
 }

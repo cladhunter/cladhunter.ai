@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createClient } from '../utils/supabase/client';
+import { getSupabaseClient } from '../lib/supabase';
 
 export interface AuthUser {
   id: string;
@@ -13,7 +13,7 @@ export function useAuth() {
   const [isAnonymous, setIsAnonymous] = useState(false);
 
   useEffect(() => {
-    const supabase = createClient();
+    const supabase = getSupabaseClient();
 
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {

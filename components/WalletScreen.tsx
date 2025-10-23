@@ -35,7 +35,7 @@ const transactions = [
 
 export function WalletScreen() {
   const { user } = useAuth();
-  const { userData, refreshBalance } = useUserData();
+  const { userData, refreshBalance, balance: realtimeBalance } = useUserData();
   const { makeRequest } = useApi();
   const { sendTransaction, isConnected } = useTonConnect();
   
@@ -43,7 +43,7 @@ export function WalletScreen() {
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
   const [isSendingTx, setIsSendingTx] = useState(false);
 
-  const balance = userData?.energy || 0;
+  const balance = realtimeBalance ?? userData?.energy ?? 0;
   const balanceInTon = energyToTon(balance);
   const currentBoostLevel = userData?.boost_level || 0;
 

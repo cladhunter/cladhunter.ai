@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { API_BASE_URL, getAuthHeaders } from '../utils/supabase/client';
+import { API_BASE_URL, getAuthHeaders } from '../lib/supabase';
 import { publicAnonKey } from '../utils/supabase/info';
 
 export function useApi() {
