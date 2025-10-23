@@ -63,7 +63,12 @@ export function WalletScreen() {
   };
 
   const handleShareLink = () => {
-    const referralLink = `https://cladhunter.app/ref/${user?.id}`;
+    if (!user) {
+      toast.error('Connect your TON wallet to get your referral link.');
+      return;
+    }
+
+    const referralLink = `https://cladhunter.app/ref/${user.id}`;
     navigator.clipboard.writeText(referralLink);
     toast.success('Referral link copied!');
   };

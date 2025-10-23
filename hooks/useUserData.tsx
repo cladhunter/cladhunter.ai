@@ -15,22 +15,6 @@ export function useUserData() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserData = useCallback(async () => {
-    if (!user) return;
-
-    const data = await makeRequest<{ user: UserData }>(
-      '/user/init',
-      { method: 'POST' },
-      user.accessToken,
-      user.id
-    );
-
-    if (data) {
-      setUserData(data.user);
-    }
-    setLoading(false);
-  }, [user, makeRequest]);
-
   const refreshBalance = useCallback(async () => {
     if (!user) return;
 
@@ -41,19 +25,56 @@ export function useUserData() {
       boost_expires_at: string | null;
     }>('/user/balance', { method: 'GET' }, user.accessToken, user.id);
 
-    if (data && userData) {
-      setUserData({
-        ...userData,
-        energy: data.energy,
-        boost_level: data.boost_level,
-        boost_expires_at: data.boost_expires_at,
-      });
+    if (data) {
+      setUserData((current) =>
+        current
+          ? {
+              ...current,
+              energy: data.energy,
+              boost_level: data.boost_level,
+              boost_expires_at: data.boost_expires_at,
+            }
+          : current,
+      );
     }
-  }, [user, userData, makeRequest]);
+  }, [user, makeRequest]);
 
   useEffect(() => {
-    fetchUserData();
-  }, [fetchUserData]);
+    let isActive = true;
+
+    const loadUserData = async () => {
+      if (!user) {
+        if (isActive) {
+          setUserData(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+
+      const data = await makeRequest<{ user: UserData }>(
+        '/user/init',
+        { method: 'POST' },
+        user.accessToken,
+        user.id
+      );
+
+      if (data && isActive) {
+        setUserData(data.user);
+      }
+
+      if (isActive) {
+        setLoading(false);
+      }
+    };
+
+    loadUserData();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user, makeRequest]);
 
   return { userData, loading, refreshBalance };
 }

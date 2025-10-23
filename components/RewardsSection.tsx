@@ -24,29 +24,45 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
 
   // Load claimed rewards status
   useEffect(() => {
-    loadRewardStatus();
-  }, [user]);
+    let isActive = true;
 
-  async function loadRewardStatus() {
-    if (!user) return;
-    
-    try {
-      const response = await makeRequest<RewardStatusResponse>(
-        '/rewards/status',
-        { method: 'GET' },
-        user.accessToken,
-        user.id
-      );
-
-      if (response) {
-        setClaimedPartners(response.claimed_partners);
+    const loadRewardStatus = async () => {
+      if (!user) {
+        if (isActive) {
+          setClaimedPartners([]);
+          setLoading(false);
+        }
+        return;
       }
-    } catch (error) {
-      console.error('Failed to load reward status:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+
+      setLoading(true);
+
+      try {
+        const response = await makeRequest<RewardStatusResponse>(
+          '/rewards/status',
+          { method: 'GET' },
+          user.accessToken,
+          user.id
+        );
+
+        if (response && isActive) {
+          setClaimedPartners(response.claimed_partners);
+        }
+      } catch (error) {
+        console.error('Failed to load reward status:', error);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadRewardStatus();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user, makeRequest]);
 
   async function handleClaimReward(partner: PartnerReward) {
     if (claimedPartners.includes(partner.id) || claiming || !user) return;
