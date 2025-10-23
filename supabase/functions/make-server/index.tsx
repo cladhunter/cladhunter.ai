@@ -2,7 +2,6 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import * as kv from "./kv_store.tsx";
 
 const app = new Hono();
 
@@ -59,6 +58,17 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+function mapProfile(record: any): User {
+  return {
+    id: record.id,
+    energy: record.energy,
+    boost_level: record.boost_level,
+    last_watch_at: record.last_watch_at,
+    boost_expires_at: record.boost_expires_at,
+    created_at: record.created_at,
+  };
+}
+
 // Helper to get user from auth token
 async function getUserFromAuth(authHeader: string | null, userIdHeader: string | null): Promise<{ id: string } | null> {
   if (!authHeader) return null;
@@ -84,31 +94,48 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
 
 // Helper to get or create user
 async function getOrCreateUser(userId: string): Promise<User> {
-  const userKey = `user:${userId}`;
-  const existing = await kv.get(userKey);
-  
-  if (existing) {
-    return JSON.parse(existing) as User;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load user: ${error.message}`);
   }
-  
-  // Create new user
-  const newUser: User = {
-    id: userId,
-    energy: 0,
-    boost_level: 0,
-    last_watch_at: null,
-    boost_expires_at: null,
-    created_at: new Date().toISOString(),
-  };
-  
-  await kv.set(userKey, JSON.stringify(newUser));
-  return newUser;
+
+  if (data) {
+    return mapProfile(data);
+  }
+
+  const { data: created, error: createError } = await supabase
+    .from('profiles')
+    .insert({ id: userId })
+    .select()
+    .single();
+
+  if (createError) {
+    throw new Error(`Failed to create user: ${createError.message}`);
+  }
+
+  return mapProfile(created);
 }
 
 // Helper to update user
 async function updateUser(user: User): Promise<void> {
-  const userKey = `user:${user.id}`;
-  await kv.set(userKey, JSON.stringify(user));
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      energy: user.energy,
+      boost_level: user.boost_level,
+      last_watch_at: user.last_watch_at,
+      boost_expires_at: user.boost_expires_at,
+    })
+    .eq('id', user.id);
+
+  if (error) {
+    throw new Error(`Failed to update user: ${error.message}`);
+  }
 }
 
 // Enable logger
@@ -150,12 +177,15 @@ app.post("/make-server-0f597298/user/init", async (c) => {
     }
     
     // Track session
-    const sessionKey = `session:${authUser.id}:${Date.now()}`;
-    const sessionData = {
-      user_id: authUser.id,
-      timestamp: new Date().toISOString(),
-    };
-    await kv.set(sessionKey, JSON.stringify(sessionData));
+    const { error: sessionError } = await supabase
+      .from('sessions')
+      .insert({
+        user_id: authUser.id,
+      });
+
+    if (sessionError) {
+      console.log('Error saving session:', sessionError);
+    }
     
     return c.json({
       user: {
@@ -251,12 +281,26 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     }
     
     // Check daily limit
-    const today = new Date().toISOString().split('T')[0];
-    const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kv.get(dailyCountKey);
-    const dailyCount = dailyCountStr ? parseInt(dailyCountStr) : 0;
-    
-    if (dailyCount >= DAILY_VIEW_LIMIT) {
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
+
+    const { count: dailyCount, error: dailyCountError } = await supabase
+      .from('ad_watches')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', authUser.id)
+      .gte('created_at', startOfDay.toISOString())
+      .lt('created_at', endOfDay.toISOString());
+
+    if (dailyCountError) {
+      console.log('Error counting daily watches:', dailyCountError);
+      return c.json({ error: 'Failed to process ad watch' }, 500);
+    }
+
+    const watchesToday = dailyCount ?? 0;
+
+    if (watchesToday >= DAILY_VIEW_LIMIT) {
       return c.json({ error: 'Daily limit reached' }, 429);
     }
     
@@ -265,31 +309,32 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     const energyReward = Math.floor(BASE_AD_REWARD * multiplier);
     
     // Update user
+    const watchTimestamp = new Date().toISOString();
     user.energy += energyReward;
-    user.last_watch_at = new Date().toISOString();
+    user.last_watch_at = watchTimestamp;
     await updateUser(user);
-    
-    // Update daily count
-    await kv.set(dailyCountKey, String(dailyCount + 1));
-    
-    // Log watch for analytics
-    const watchLogKey = `watch:${authUser.id}:${Date.now()}`;
-    const watchLog = {
-      user_id: authUser.id,
-      ad_id: ad_id,
-      reward: energyReward,
-      base_reward: BASE_AD_REWARD,
-      multiplier: multiplier,
-      created_at: new Date().toISOString(),
-    };
-    await kv.set(watchLogKey, JSON.stringify(watchLog));
-    
+
+    const { error: watchInsertError } = await supabase
+      .from('ad_watches')
+      .insert({
+        user_id: authUser.id,
+        ad_id: ad_id,
+        reward: energyReward,
+        base_reward: BASE_AD_REWARD,
+        multiplier: multiplier,
+        created_at: watchTimestamp,
+      });
+
+    if (watchInsertError) {
+      console.log('Error logging ad watch:', watchInsertError);
+    }
+
     return c.json({
       success: true,
       reward: energyReward,
       new_balance: user.energy,
       multiplier: multiplier,
-      daily_watches_remaining: DAILY_VIEW_LIMIT - dailyCount - 1,
+      daily_watches_remaining: DAILY_VIEW_LIMIT - watchesToday - 1,
     });
   } catch (error) {
     console.log('Error completing ad watch:', error);
@@ -322,19 +367,25 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
     const orderId = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const payload = `boost_${boost_level}_${authUser.id}_${Date.now()}`;
     
-    // Create order
-    const order: Order = {
-      id: orderId,
-      user_id: authUser.id,
-      boost_level: boost_level,
-      ton_amount: boost.costTon,
-      status: 'pending',
-      payload: payload,
-      tx_hash: null,
-      created_at: new Date().toISOString(),
-    };
-    
-    await kv.set(`order:${orderId}`, JSON.stringify(order));
+    const orderCreatedAt = new Date().toISOString();
+    const { error: orderInsertError } = await supabase
+      .from('orders')
+      .insert({
+        id: orderId,
+        user_id: authUser.id,
+        boost_level: boost_level,
+        ton_amount: boost.costTon,
+        status: 'pending',
+        payload: payload,
+        tx_hash: null,
+        created_at: orderCreatedAt,
+        updated_at: orderCreatedAt,
+      });
+
+    if (orderInsertError) {
+      console.log('Error creating order:', orderInsertError);
+      return c.json({ error: 'Failed to create order' }, 500);
+    }
     
     // Get merchant address from env
     const merchantAddress = Deno.env.get('VITE_TON_MERCHANT_ADDRESS') || 'UQD_merchant_address_placeholder';
@@ -363,23 +414,30 @@ app.get("/make-server-0f597298/orders/:orderId", async (c) => {
     }
     
     const orderId = c.req.param('orderId');
-    const orderData = await kv.get(`order:${orderId}`);
-    
-    if (!orderData) {
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (orderError) {
+      console.log('Error fetching order:', orderError);
+      return c.json({ error: 'Failed to fetch order' }, 500);
+    }
+
+    if (!order) {
       return c.json({ error: 'Order not found' }, 404);
     }
-    
-    const order: Order = JSON.parse(orderData);
-    
+
     if (order.user_id !== authUser.id) {
       return c.json({ error: 'Unauthorized' }, 403);
     }
-    
+
     return c.json({
       order_id: order.id,
       status: order.status,
       boost_level: order.boost_level,
-      ton_amount: order.ton_amount,
+      ton_amount: Number(order.ton_amount),
       tx_hash: order.tx_hash,
       created_at: order.created_at,
     });
@@ -399,18 +457,25 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
     }
     
     const orderId = c.req.param('orderId');
-    const orderData = await kv.get(`order:${orderId}`);
-    
-    if (!orderData) {
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (orderError) {
+      console.log('Error fetching order for confirmation:', orderError);
+      return c.json({ error: 'Failed to confirm order' }, 500);
+    }
+
+    if (!order) {
       return c.json({ error: 'Order not found' }, 404);
     }
-    
-    const order: Order = JSON.parse(orderData);
-    
+
     if (order.user_id !== authUser.id) {
       return c.json({ error: 'Unauthorized' }, 403);
     }
-    
+
     if (order.status !== 'pending') {
       return c.json({ error: 'Order already processed' }, 400);
     }
@@ -426,10 +491,19 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
     //   return c.json({ error: 'Transaction verification failed' }, 400);
     // }
     
-    // Update order status
-    order.status = 'paid';
-    order.tx_hash = txHash;
-    await kv.set(`order:${orderId}`, JSON.stringify(order));
+    const { error: orderUpdateError } = await supabase
+      .from('orders')
+      .update({
+        status: 'paid',
+        tx_hash: txHash,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId);
+
+    if (orderUpdateError) {
+      console.log('Error updating order status:', orderUpdateError);
+      return c.json({ error: 'Failed to confirm order' }, 500);
+    }
     
     // Update user boost
     const user = await getOrCreateUser(authUser.id);
@@ -467,33 +541,67 @@ app.get("/make-server-0f597298/stats", async (c) => {
     
     const user = await getOrCreateUser(authUser.id);
     
-    // Get watch logs
-    const watchLogsPrefix = `watch:${authUser.id}:`;
-    const watchLogs = await kv.getByPrefix(watchLogsPrefix);
-    
-    const totalWatches = watchLogs.length;
-    const totalEarned = watchLogs.reduce((sum, log) => {
-      const logData = JSON.parse(log);
-      return sum + (logData.reward || 0);
-    }, 0);
-    
-    // Parse and sort watch logs by timestamp (most recent first)
-    const parsedWatchLogs = watchLogs
-      .map(log => JSON.parse(log))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 20); // Return last 20 sessions
-    
-    // Get session count
-    const sessionPrefix = `session:${authUser.id}:`;
-    const sessions = await kv.getByPrefix(sessionPrefix);
-    const totalSessions = sessions.length;
-    
-    // Get today's watch count
-    const today = new Date().toISOString().split('T')[0];
-    const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kv.get(dailyCountKey);
-    const todayWatches = dailyCountStr ? parseInt(dailyCountStr) : 0;
-    
+    const { data: watchStats, error: watchStatsError } = await supabase
+      .from('v_user_watch_stats')
+      .select('total_watches, total_reward')
+      .eq('user_id', authUser.id)
+      .maybeSingle();
+
+    if (watchStatsError) {
+      console.log('Error fetching watch stats:', watchStatsError);
+    }
+
+    const totalWatches = watchStats?.total_watches ? Number(watchStats.total_watches) : 0;
+    const totalEarned = watchStats?.total_reward ? Number(watchStats.total_reward) : 0;
+
+    const { data: watchHistoryData, error: watchHistoryError } = await supabase
+      .from('ad_watches')
+      .select('user_id, ad_id, reward, base_reward, multiplier, created_at')
+      .eq('user_id', authUser.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (watchHistoryError) {
+      console.log('Error fetching watch history:', watchHistoryError);
+    }
+
+    const parsedWatchLogs = (watchHistoryData ?? []).map((log) => ({
+      user_id: log.user_id,
+      ad_id: log.ad_id,
+      reward: log.reward,
+      base_reward: log.base_reward,
+      multiplier: Number(log.multiplier),
+      created_at: log.created_at,
+    }));
+
+    const { count: sessionCount, error: sessionCountError } = await supabase
+      .from('sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', authUser.id);
+
+    if (sessionCountError) {
+      console.log('Error counting sessions:', sessionCountError);
+    }
+
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
+
+    const { count: todayCount, error: todayCountError } = await supabase
+      .from('ad_watches')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', authUser.id)
+      .gte('created_at', startOfDay.toISOString())
+      .lt('created_at', endOfDay.toISOString());
+
+    if (todayCountError) {
+      console.log('Error counting today watches:', todayCountError);
+    }
+
+    const totalSessions = sessionCount ?? 0;
+    const todayWatches = todayCount ?? 0;
+
     return c.json({
       total_energy: user.energy,
       total_watches: totalWatches,
@@ -521,16 +629,17 @@ app.get("/make-server-0f597298/rewards/status", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
-    // Get all claimed rewards for this user
-    const claimedPrefix = `reward_claim:${authUser.id}:`;
-    const claimedRewards = await kv.getByPrefix(claimedPrefix);
-    
-    // Extract partner IDs from keys
-    const claimedPartners = claimedRewards.map(value => {
-      const claim = JSON.parse(value);
-      return claim.partner_id;
-    });
-    
+    const { data: claimedRewards, error: claimedError } = await supabase
+      .from('reward_claims')
+      .select('partner_id')
+      .eq('user_id', authUser.id);
+
+    if (claimedError) {
+      console.log('Error fetching claimed rewards:', claimedError);
+    }
+
+    const claimedPartners = (claimedRewards ?? []).map((claim) => claim.partner_id);
+
     return c.json({
       claimed_partners: claimedPartners,
       available_rewards: 0, // Could calculate based on partners.ts in future
@@ -558,9 +667,18 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     }
     
     // Check if already claimed
-    const claimKey = `reward_claim:${authUser.id}:${partner_id}`;
-    const existingClaim = await kv.get(claimKey);
-    
+    const { data: existingClaim, error: existingClaimError } = await supabase
+      .from('reward_claims')
+      .select('id')
+      .eq('user_id', authUser.id)
+      .eq('partner_id', partner_id)
+      .maybeSingle();
+
+    if (existingClaimError) {
+      console.log('Error checking existing reward claim:', existingClaimError);
+      return c.json({ error: 'Failed to claim reward' }, 500);
+    }
+
     if (existingClaim) {
       return c.json({ error: 'Reward already claimed' }, 400);
     }
@@ -580,17 +698,33 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     await updateUser(user);
     
     // Record claim
-    const claim = {
-      partner_id: partner_id,
-      user_id: authUser.id,
-      reward: reward_amount,
-      claimed_at: new Date().toISOString(),
-    };
-    await kv.set(claimKey, JSON.stringify(claim));
-    
-    // Log for analytics
-    const rewardLogKey = `reward_log:${authUser.id}:${Date.now()}`;
-    await kv.set(rewardLogKey, JSON.stringify(claim));
+    const claimedAt = new Date().toISOString();
+    const { error: claimInsertError } = await supabase
+      .from('reward_claims')
+      .insert({
+        user_id: authUser.id,
+        partner_id: partner_id,
+        reward: reward_amount,
+        claimed_at: claimedAt,
+      });
+
+    if (claimInsertError) {
+      console.log('Error saving reward claim:', claimInsertError);
+      return c.json({ error: 'Failed to claim reward' }, 500);
+    }
+
+    const { error: rewardLogError } = await supabase
+      .from('reward_logs')
+      .insert({
+        user_id: authUser.id,
+        partner_id: partner_id,
+        reward: reward_amount,
+        created_at: claimedAt,
+      });
+
+    if (rewardLogError) {
+      console.log('Error logging reward claim:', rewardLogError);
+    }
     
     return c.json({
       success: true,
