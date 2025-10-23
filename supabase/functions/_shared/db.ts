@@ -6,20 +6,26 @@ let cachedClient: SqlClient | null = null;
 let lastConfigError: Error | null = null;
 
 function resolveDatabaseUrl(): string {
-  const connectionString =
-    Deno.env.get("POSTGRES_URL_NON_POOLING") ??
-    Deno.env.get("POSTGRES_PRISMA_URL") ??
-    Deno.env.get("POSTGRES_URL");
+  const variableNames = [
+    "POSTGRES_URL_NON_POOLING",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL",
+    "SUPABASE_DB_URL",
+    "DATABASE_URL",
+  ];
 
-  if (!connectionString) {
-    const error = new Error(
-      "Database connection string not configured. Set POSTGRES_URL_NON_POOLING, POSTGRES_PRISMA_URL, or POSTGRES_URL.",
-    );
-    lastConfigError = error;
-    throw error;
+  for (const name of variableNames) {
+    const value = Deno.env.get(name);
+    if (value) {
+      return value;
+    }
   }
 
-  return connectionString;
+  const error = new Error(
+    `Database connection string not configured. Set one of ${variableNames.join(", ")}.`,
+  );
+  lastConfigError = error;
+  throw error;
 }
 
 function createClient(): SqlClient {
