@@ -147,6 +147,82 @@ Blockchain (TON - Future Integration)
 
 ---
 
+## 📡 Tracking API
+
+The `/api/track` serverless endpoint records signed partner events and issues credit ledger entries. It is deployed alongside the app (e.g., as a Vercel function) and is protected with an HMAC signature and Supabase-backed rate limiting.
+
+### Required environment
+
+Set these variables wherever the function runs (local or hosted):
+
+| Variable | Purpose |
+| --- | --- |
+| `TRACK_HMAC_SECRET` | Shared secret used to validate the `X-Track-Signature` header. |
+| `SUPABASE_URL` (or `VITE_SUPABASE_URL`) | Project URL used by the server-side Supabase client. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key used for privileged inserts into `events` and `credit_ledger`. |
+
+### Request shape
+
+```json
+{
+  "idempotencyKey": "evt_123",
+  "userId": "user_abc",
+  "eventType": "ad.completed",
+  "amount": 25,
+  "metadata": {
+    "partner": "example-network"
+  },
+  "occurredAt": "2024-10-23T12:00:00.000Z"
+}
+```
+
+- `idempotencyKey` ensures duplicate notifications return the prior result.
+- `metadata` is optional JSON that will be stored verbatim.
+
+Include the raw JSON string in the HMAC signature using SHA-256 and pass it in `X-Track-Signature` (hex or base64).
+
+### Response contract
+
+```json
+{
+  "deduped": false,
+  "eventId": "ed6be7d2-2a47-4c3c-8f4f-cc5de30dd9ce",
+  "creditLedgerId": "dc82f4c9-4995-4f7b-877c-93c3d8db8661"
+}
+```
+
+- `deduped: true` indicates the `idempotencyKey` already existed (no extra credit is issued).
+- `creditLedgerId` is `null` when `amount` is `0` or no ledger row is created.
+- `429 Too Many Requests` is returned when the user (30/min) or IP (60/min) thresholds are exceeded.
+
+### Local testing
+
+Run the function locally with the Vercel CLI (recommended because Vite alone does not serve `/api/*`):
+
+```bash
+export TRACK_HMAC_SECRET="dev-secret"
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="service-role-key"
+
+npx vercel dev --listen 3000
+```
+
+Then send a signed request (ensure `printf` does **not** add a newline when computing the signature):
+
+```bash
+BODY='{"idempotencyKey":"evt_local_1","userId":"user_123","eventType":"ad.completed","amount":25}'
+SIGNATURE=$(printf "%s" "$BODY" | openssl dgst -sha256 -hmac "$TRACK_HMAC_SECRET" -binary | xxd -p -c 256)
+
+curl -X POST http://localhost:3000/api/track \
+  -H "Content-Type: application/json" \
+  -H "X-Track-Signature: $SIGNATURE" \
+  -d "$BODY"
+```
+
+You should receive the JSON response outlined above. Supabase rows are inserted with the service-role key, and duplicate requests reuse the original `eventId`.
+
+---
+
 ## 📁 Project Structure
 
 ```
