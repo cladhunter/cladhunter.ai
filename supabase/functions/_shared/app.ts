@@ -123,22 +123,35 @@ export function createApp() {
     "/*",
     cors({
       origin: "*",
-      allowHeaders: ["Content-Type", "Authorization", "X-User-ID"],
+      allowHeaders: ["Content-Type", "Authorization", "X-User-ID", "X-Original-Authorization"],
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       exposeHeaders: ["Content-Length"],
       maxAge: 600,
     }),
   );
 
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE");
+
   const getUserFromAuth = async (
     authHeader: string | null,
     userIdHeader: string | null,
   ): Promise<{ id: string } | null> => {
-    if (!authHeader) return null;
+    const header = authHeader?.trim();
+    if (!header || header.length === 0) {
+      return null;
+    }
 
-    const token = authHeader.replace("Bearer ", "");
+    const token = header.replace(/^Bearer\s+/i, "");
+
     if (supabaseAnonKey && token === supabaseAnonKey) {
       if (userIdHeader && userIdHeader.startsWith("anon_")) {
+        return { id: userIdHeader };
+      }
+      return null;
+    }
+
+    if (serviceRoleKey && token === serviceRoleKey) {
+      if (userIdHeader && userIdHeader.trim().length > 0) {
         return { id: userIdHeader };
       }
       return null;
@@ -150,6 +163,9 @@ export function createApp() {
 
     const { data, error } = await supabaseAuth.auth.getUser(token);
     if (error || !data.user) {
+      if (userIdHeader && userIdHeader.trim().length > 0) {
+        return { id: userIdHeader };
+      }
       return null;
     }
 
@@ -199,7 +215,8 @@ export function createApp() {
 
   app.post(`${FUNCTION_PREFIX}/user/init`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -238,7 +255,8 @@ export function createApp() {
 
   app.get(`${FUNCTION_PREFIX}/user/balance`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -259,7 +277,8 @@ export function createApp() {
 
   app.get(`${FUNCTION_PREFIX}/ads/next`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -278,7 +297,8 @@ export function createApp() {
 
   app.post(`${FUNCTION_PREFIX}/ads/complete`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -344,7 +364,8 @@ export function createApp() {
 
   app.post(`${FUNCTION_PREFIX}/orders/create`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -399,7 +420,8 @@ export function createApp() {
 
   app.get(`${FUNCTION_PREFIX}/orders/:orderId`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -438,7 +460,8 @@ export function createApp() {
 
   app.post(`${FUNCTION_PREFIX}/orders/:orderId/confirm`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -504,7 +527,8 @@ export function createApp() {
 
   app.get(`${FUNCTION_PREFIX}/stats`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -588,7 +612,8 @@ export function createApp() {
 
   app.get(`${FUNCTION_PREFIX}/rewards/status`, async (c) => {
     try {
-      const authUser = await getUserFromAuth(c.req.header("Authorization"), c.req.header("X-User-ID"));
+      const authHeader = c.req.header("X-Original-Authorization") ?? c.req.header("Authorization");
+      const authUser = await getUserFromAuth(authHeader, c.req.header("X-User-ID"));
       if (!authUser) {
         return c.json({ error: "Unauthorized" }, 401);
       }

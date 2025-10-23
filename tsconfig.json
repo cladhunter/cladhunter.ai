@@ -18,5 +18,5 @@
     "types": ["vite/client"]
   },
   "include": ["vite-env.d.ts", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist", "supabase/functions", "LICENSE"]
+  "exclude": ["node_modules", "dist", "supabase/functions", "api", "LICENSE"]
 }

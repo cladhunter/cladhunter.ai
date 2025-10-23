@@ -38,6 +38,14 @@ const fallbackUrl = `https://${projectId}.supabase.co`;
 const supabaseUrl = envSupabaseUrl ? normalizeUrl(envSupabaseUrl) : fallbackUrl;
 const supabaseAnonKey = envSupabaseAnonKey ?? publicAnonKey;
 
+const envFunctionBaseUrl =
+  readEnv('NEXT_PUBLIC_SUPABASE_FUNCTION_URL') ??
+  readEnv('VITE_SUPABASE_FUNCTION_URL');
+
+const envFunctionProxyUrl =
+  readEnv('NEXT_PUBLIC_SUPABASE_FUNCTION_PROXY_URL') ??
+  readEnv('VITE_SUPABASE_FUNCTION_PROXY_URL');
+
 const missingEnvVars = [
   envSupabaseUrl ? null : 'NEXT_PUBLIC_SUPABASE_URL',
   envSupabaseAnonKey ? null : 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
@@ -80,7 +88,40 @@ export function getAuthHeaders(accessToken?: string): HeadersInit {
   };
 }
 
-export const API_BASE_URL = `${supabaseUrl}/functions/v1/make-server-0f597298`;
+function resolveFunctionBaseUrl(): string {
+  if (envFunctionBaseUrl && envFunctionBaseUrl.trim().length > 0) {
+    return normalizeUrl(envFunctionBaseUrl);
+  }
+
+  return `${supabaseUrl}/functions/v1/make-server-0f597298`;
+}
+
+function resolveFunctionProxyUrl(): string | null {
+  if (envFunctionProxyUrl && envFunctionProxyUrl.trim().length > 0) {
+    return normalizeUrl(envFunctionProxyUrl);
+  }
+
+  const isBrowser = typeof window !== 'undefined';
+  const isVercelRuntime = typeof process !== 'undefined' && Boolean(process.env.VERCEL);
+
+  if (isBrowser || isVercelRuntime) {
+    return '/api/make-server-0f597298';
+  }
+
+  return null;
+}
+
+export function getApiBaseUrls() {
+  const primary = resolveFunctionBaseUrl();
+  const fallback = resolveFunctionProxyUrl();
+
+  return {
+    primary,
+    fallback,
+  } as const;
+}
+
+export const API_BASE_URL = resolveFunctionBaseUrl();
 
 export const supabaseCredentials = {
   url: supabaseUrl,
