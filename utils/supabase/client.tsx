@@ -2,8 +2,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from './info';
 
-const envSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? undefined;
-const envSupabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? undefined;
+const envSupabaseUrl = (import.meta.env.NEXT_PUBLIC_SUPABASE_URL as string | undefined) ?? undefined;
+const envSupabaseAnonKey = (import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string | undefined) ?? undefined;
 
 const fallbackUrl = `https://${projectId}.supabase.co`;
 
@@ -18,8 +18,8 @@ const supabaseUrl = normalizeUrl(hasEnvSupabaseUrl ? envSupabaseUrl! : fallbackU
 const supabaseAnonKey = hasEnvSupabaseAnonKey ? envSupabaseAnonKey!.trim() : publicAnonKey;
 
 const missingEnvVars = [
-  !hasEnvSupabaseUrl ? 'VITE_SUPABASE_URL' : null,
-  !hasEnvSupabaseAnonKey ? 'VITE_SUPABASE_ANON_KEY' : null,
+  !hasEnvSupabaseUrl ? 'NEXT_PUBLIC_SUPABASE_URL' : null,
+  !hasEnvSupabaseAnonKey ? 'NEXT_PUBLIC_SUPABASE_ANON_KEY' : null,
 ].filter(Boolean) as string[];
 
 if (missingEnvVars.length > 0) {
