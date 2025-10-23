@@ -14,27 +14,40 @@ export function StatsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      fetchStats();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    let isActive = true;
 
-  const fetchStats = async () => {
-    if (!user) return;
+    const loadStats = async () => {
+      if (!user) {
+        if (isActive) {
+          setStats(null);
+          setLoading(false);
+        }
+        return;
+      }
 
-    setLoading(true);
-    const data = await makeRequest<UserStatsResponse>(
-      '/stats', 
-      { method: 'GET' }, 
-      user.accessToken, 
-      user.id
-    );
-    if (data) {
-      setStats(data);
-    }
-    setLoading(false);
-  };
+      setLoading(true);
+      const data = await makeRequest<UserStatsResponse>(
+        '/stats',
+        { method: 'GET' },
+        user.accessToken,
+        user.id
+      );
+
+      if (data && isActive) {
+        setStats(data);
+      }
+
+      if (isActive) {
+        setLoading(false);
+      }
+    };
+
+    loadStats();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user, makeRequest]);
 
   const totalMined = stats?.total_earned || 0;
   const totalWatches = stats?.total_watches || 0;
