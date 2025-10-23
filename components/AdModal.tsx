@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Gift } from 'lucide-react';
 import { AdCreative, adConfig } from '../config/ads';
 import { hapticFeedback, openExternalLink } from '../utils/telegram';
+import { trackClick } from '../lib/trackClick';
 
 interface AdModalProps {
   isOpen: boolean;
@@ -53,6 +54,13 @@ export function AdModal({ isOpen, ad, onClose, onAdCompleted }: AdModalProps) {
     // Open partner URL in new tab (Telegram-aware)
     openExternalLink(ad.partnerUrl);
     
+    void trackClick('ad_claim_clicked', {
+      adId: ad.id,
+      partnerUrl: ad.partnerUrl,
+      partnerName: ad.partnerName,
+      duration: ad.duration,
+    });
+
     // Complete ad watch and close
     onAdCompleted();
     onClose();

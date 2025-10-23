@@ -8,9 +8,10 @@ import { useApi } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
 import type { ClaimRewardResponse, RewardStatusResponse } from '../types';
 import { hapticFeedback } from '../utils/telegram';
+import { trackClick } from '../lib/trackClick';
 
 interface RewardsSectionProps {
-  onRewardClaimed?: () => void;
+  onRewardClaimed?: (newBalance?: number) => void;
 }
 
 export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
@@ -86,8 +87,14 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
 
           // Refresh balance via callback
           if (onRewardClaimed) {
-            onRewardClaimed();
+            onRewardClaimed(response.new_balance);
           }
+
+          void trackClick('partner_reward_claimed', {
+            partnerId: partner.id,
+            reward: response.reward,
+            newBalance: response.new_balance,
+          });
         }
       } catch (error) {
         console.error('Error claiming reward:', error);
