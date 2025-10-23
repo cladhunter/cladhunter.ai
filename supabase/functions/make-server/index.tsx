@@ -58,6 +58,15 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+function parseJsonDetails(details?: string | null) {
+  if (!details) return null;
+  try {
+    return JSON.parse(details);
+  } catch (_error) {
+    return null;
+  }
+}
+
 function mapProfile(record: any): User {
   return {
     id: record.id,
@@ -95,30 +104,14 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
 // Helper to get or create user
 async function getOrCreateUser(userId: string): Promise<User> {
   const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+    .rpc('ensure_profile', { p_user_id: userId })
+    .single();
 
   if (error) {
     throw new Error(`Failed to load user: ${error.message}`);
   }
 
-  if (data) {
-    return mapProfile(data);
-  }
-
-  const { data: created, error: createError } = await supabase
-    .from('profiles')
-    .insert({ id: userId })
-    .select()
-    .single();
-
-  if (createError) {
-    throw new Error(`Failed to create user: ${createError.message}`);
-  }
-
-  return mapProfile(created);
+  return mapProfile(data);
 }
 
 // Helper to update user
@@ -257,84 +250,66 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     
     const body = await c.req.json();
     const { ad_id } = body;
-    
-    if (!ad_id) {
+
+    if (typeof ad_id !== 'string' || ad_id.trim().length === 0) {
       return c.json({ error: 'Missing ad_id' }, 400);
     }
-    
-    // Get user
-    const user = await getOrCreateUser(authUser.id);
-    
-    // Check cooldown
-    if (user.last_watch_at) {
-      const lastWatch = new Date(user.last_watch_at);
-      const now = new Date();
-      const secondsSinceLastWatch = (now.getTime() - lastWatch.getTime()) / 1000;
-      
-      if (secondsSinceLastWatch < AD_COOLDOWN_SECONDS) {
-        const remainingCooldown = Math.ceil(AD_COOLDOWN_SECONDS - secondsSinceLastWatch);
-        return c.json({ 
-          error: 'Cooldown active', 
-          cooldown_remaining: remainingCooldown 
-        }, 429);
-      }
-    }
-    
-    // Check daily limit
-    const now = new Date();
-    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const endOfDay = new Date(startOfDay);
-    endOfDay.setUTCDate(endOfDay.getUTCDate() + 1);
 
-    const { count: dailyCount, error: dailyCountError } = await supabase
-      .from('ad_watches')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', authUser.id)
-      .gte('created_at', startOfDay.toISOString())
-      .lt('created_at', endOfDay.toISOString());
-
-    if (dailyCountError) {
-      console.log('Error counting daily watches:', dailyCountError);
-      return c.json({ error: 'Failed to process ad watch' }, 500);
-    }
-
-    const watchesToday = dailyCount ?? 0;
-
-    if (watchesToday >= DAILY_VIEW_LIMIT) {
-      return c.json({ error: 'Daily limit reached' }, 429);
-    }
-    
-    // Calculate reward with boost multiplier
-    const multiplier = boostMultiplier(user.boost_level);
-    const energyReward = Math.floor(BASE_AD_REWARD * multiplier);
-    
-    // Update user
-    const watchTimestamp = new Date().toISOString();
-    user.energy += energyReward;
-    user.last_watch_at = watchTimestamp;
-    await updateUser(user);
-
-    const { error: watchInsertError } = await supabase
-      .from('ad_watches')
-      .insert({
-        user_id: authUser.id,
-        ad_id: ad_id,
-        reward: energyReward,
-        base_reward: BASE_AD_REWARD,
-        multiplier: multiplier,
-        created_at: watchTimestamp,
+    const { data: completeData, error: completeError } = await supabase
+      .rpc('complete_ad_watch', {
+        p_user_id: authUser.id,
+        p_ad_id: ad_id,
+        p_base_reward: BASE_AD_REWARD,
+        p_daily_limit: DAILY_VIEW_LIMIT,
+        p_cooldown_seconds: AD_COOLDOWN_SECONDS,
       });
 
-    if (watchInsertError) {
-      console.log('Error logging ad watch:', watchInsertError);
+    if (completeError) {
+      const parsedDetails = parseJsonDetails(completeError.details);
+
+      if (completeError.message === 'cooldown_active') {
+        const remaining = typeof parsedDetails?.cooldown_remaining === 'number'
+          ? parsedDetails.cooldown_remaining
+          : AD_COOLDOWN_SECONDS;
+
+        return c.json({
+          error: 'Cooldown active',
+          cooldown_remaining: remaining,
+        }, 429);
+      }
+
+      if (completeError.message === 'daily_limit_reached') {
+        return c.json({ error: 'Daily limit reached' }, 429);
+      }
+
+      console.log('Error completing ad watch via RPC:', completeError);
+      return c.json({ error: 'Failed to complete ad watch' }, 500);
     }
+
+    if (!completeData) {
+      console.log('complete_ad_watch returned no result for user', authUser.id);
+      return c.json({ error: 'Failed to complete ad watch' }, 500);
+    }
+
+    const result = completeData as {
+      reward: number;
+      new_balance: number;
+      multiplier: number;
+      daily_watches_remaining: number;
+      boost_level?: number;
+      boost_expires_at?: string | null;
+      last_watch_at?: string | null;
+    };
 
     return c.json({
       success: true,
-      reward: energyReward,
-      new_balance: user.energy,
-      multiplier: multiplier,
-      daily_watches_remaining: DAILY_VIEW_LIMIT - watchesToday - 1,
+      reward: result.reward,
+      new_balance: result.new_balance,
+      multiplier: result.multiplier,
+      daily_watches_remaining: result.daily_watches_remaining,
+      boost_level: result.boost_level,
+      boost_expires_at: result.boost_expires_at,
+      last_watch_at: result.last_watch_at,
     });
   } catch (error) {
     console.log('Error completing ad watch:', error);
