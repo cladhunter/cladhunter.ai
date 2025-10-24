@@ -894,11 +894,32 @@ app.get("/rewards/status", async (c) => {
     const claimedRewards = await kvStore.getByPrefix(claimedPrefix);
     
     // Extract partner IDs from keys
-    const claimedPartners = claimedRewards.map(value => {
-      const claim =
-        typeof value === 'string' ? (JSON.parse(value) as { partner_id: string }) : value;
-      return claim.partner_id;
-    });
+    const claimedPartners: string[] = [];
+    for (const entry of claimedRewards) {
+      let claim = entry;
+
+      if (typeof entry === 'string') {
+        try {
+          claim = JSON.parse(entry) as { partner_id?: unknown };
+        } catch (parseError) {
+          console.log('Skipping malformed reward claim entry (invalid JSON)', {
+            value: entry,
+            error: parseError instanceof Error ? parseError.message : parseError,
+          });
+          continue;
+        }
+      }
+
+      if (claim && typeof claim === 'object') {
+        const partnerId = (claim as { partner_id?: unknown }).partner_id;
+        if (typeof partnerId === 'string') {
+          claimedPartners.push(partnerId);
+          continue;
+        }
+      }
+
+      console.log('Skipping reward claim entry with unexpected format', { value: claim });
+    }
     
     return c.json({
       claimed_partners: claimedPartners,
