@@ -1,3 +1,5 @@
+import { partnerRewards } from '../config/partners.ts';
+
 // Smoke test for Supabase edge function routes using public anon key only
 process.env.PUBLIC_SUPABASE_ANON_KEY = 'public-anon-key';
 delete process.env.SUPABASE_ANON_KEY;
@@ -94,4 +96,76 @@ if (!completeData.success) {
 
 if (typeof completeData.new_balance !== 'number' || completeData.new_balance <= 0) {
   throw new Error('ads/complete did not update balance');
+}
+
+const testPartnerId = 'telegram_cladhunter_official';
+const testPartnerConfig = partnerRewards.find((partner) => partner.id === testPartnerId);
+
+if (!testPartnerConfig || !testPartnerConfig.active) {
+  throw new Error(`Test partner ${testPartnerId} is missing or inactive in config`);
+}
+
+const rewardClaimResponse = await app.request('http://localhost/make-server-0f597298/rewards/claim', {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    partner_id: testPartnerId,
+    reward_amount: testPartnerConfig.reward + 9999,
+  }),
+});
+
+if (rewardClaimResponse.status !== 200) {
+  throw new Error(`/rewards/claim failed for valid partner with status ${rewardClaimResponse.status}`);
+}
+
+const rewardClaimData = await rewardClaimResponse.json();
+console.log('Reward claim response:', rewardClaimData);
+
+if (rewardClaimData.reward !== testPartnerConfig.reward) {
+  throw new Error('Reward claim did not use server-configured amount');
+}
+
+const expectedBalanceAfterClaim = completeData.new_balance + testPartnerConfig.reward;
+if (rewardClaimData.new_balance !== expectedBalanceAfterClaim) {
+  throw new Error('Reward claim new balance mismatch for valid partner');
+}
+
+const secondUserHeaders = {
+  ...headers,
+  'X-User-ID': 'anon_test_user_2',
+};
+
+const secondInitResponse = await app.request('http://localhost/make-server-0f597298/user/init', {
+  method: 'POST',
+  headers: secondUserHeaders,
+  body: JSON.stringify({}),
+});
+
+if (secondInitResponse.status !== 200) {
+  throw new Error(`init failed for second user with status ${secondInitResponse.status}`);
+}
+
+const inflatedReward = testPartnerConfig.reward * 5;
+const inflatedClaimResponse = await app.request('http://localhost/make-server-0f597298/rewards/claim', {
+  method: 'POST',
+  headers: secondUserHeaders,
+  body: JSON.stringify({
+    partner_id: testPartnerId,
+    reward_amount: inflatedReward,
+  }),
+});
+
+if (inflatedClaimResponse.status !== 200) {
+  throw new Error(`/rewards/claim failed for second user with status ${inflatedClaimResponse.status}`);
+}
+
+const inflatedClaimData = await inflatedClaimResponse.json();
+console.log('Reward claim response with inflated amount:', inflatedClaimData);
+
+if (inflatedClaimData.reward !== testPartnerConfig.reward) {
+  throw new Error('Server accepted client-inflated reward amount');
+}
+
+if (inflatedClaimData.new_balance !== testPartnerConfig.reward) {
+  throw new Error('Second user balance did not match configured reward after inflated claim attempt');
 }
