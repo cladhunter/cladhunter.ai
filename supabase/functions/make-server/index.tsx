@@ -450,8 +450,15 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
     await kv.set(`order:${orderId}`, JSON.stringify(order));
     
     // Get merchant address from env
-    const merchantAddress = Deno.env.get('VITE_TON_MERCHANT_ADDRESS') || 'UQD_merchant_address_placeholder';
-    
+    const merchantAddress = Deno.env.get('VITE_TON_MERCHANT_ADDRESS')?.trim();
+
+    if (!merchantAddress) {
+      console.warn('[orders] Missing VITE_TON_MERCHANT_ADDRESS environment variable');
+      return c.json({
+        error: 'Merchant wallet address is not configured. Please contact support or configure VITE_TON_MERCHANT_ADDRESS.'
+      }, 500);
+    }
+
     return c.json({
       order_id: orderId,
       address: merchantAddress,
