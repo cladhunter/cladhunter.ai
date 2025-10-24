@@ -4,6 +4,10 @@ import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
 
+const kvStore = (globalThis as Record<string, unknown> & {
+  __kvOverride?: typeof kv;
+}).__kvOverride ?? kv;
+
 const app = new Hono();
 
 // Types
@@ -131,33 +135,67 @@ function resolveWalletAddressForRequest(
   return null;
 }
 
-async function getUserFromAuth(authHeader: string | null, userIdHeader: string | null): Promise<{ id: string } | null> {
-  if (!authHeader) return null;
+type AuthResult =
+  | { ok: true; user: { id: string } }
+  | { ok: false; status: number; message: string };
 
-  const token = authHeader.replace('Bearer ', '');
+function warnAuth(message: string) {
+  console.warn(`[auth] ${message}`);
+}
 
-  // Check if it's the public anon key (for anonymous users)
-  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  if (token === supabaseAnonKey) {
-    // For anonymous users, use the user ID from custom header
+function resolveKnownAnonKeys(): string[] {
+  const maybeKeys = [
+    Deno.env.get('SUPABASE_ANON_KEY'),
+    Deno.env.get('PUBLIC_SUPABASE_ANON_KEY'),
+    Deno.env.get('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+  ];
+
+  return maybeKeys
+    .map((key) => key?.trim())
+    .filter((key): key is string => Boolean(key));
+}
+
+async function getUserFromAuth(authHeader: string | null, userIdHeader: string | null): Promise<AuthResult> {
+  if (!authHeader) {
+    const message = 'Unauthorized: Missing Authorization header';
+    warnAuth(message);
+    return { ok: false, status: 401, message };
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  if (!token) {
+    const message = 'Unauthorized: Empty Authorization token';
+    warnAuth(message);
+    return { ok: false, status: 401, message };
+  }
+
+  const knownAnonKeys = resolveKnownAnonKeys();
+  if (knownAnonKeys.includes(token)) {
     const normalizedId = normalizeAnonUserId(userIdHeader);
     if (normalizedId) {
-      return { id: normalizedId };
+      return { ok: true, user: { id: normalizedId } };
     }
-    return null;
+
+    const message = 'Unauthorized: Missing or invalid X-User-ID for anonymous request';
+    warnAuth(message);
+    return { ok: false, status: 401, message };
   }
-  
-  // For authenticated users, verify the token
+
   const { data, error } = await supabase.auth.getUser(token);
-  
-  if (error || !data.user) return null;
-  return { id: data.user.id };
+
+  if (error || !data.user) {
+    const message = 'Unauthorized: Unrecognized authentication token';
+    warnAuth(`${message}${error ? ` (${error.message})` : ''}`);
+    return { ok: false, status: 401, message };
+  }
+
+  return { ok: true, user: { id: data.user.id } };
 }
 
 // Helper to get or create user
 async function getOrCreateUser(userId: string, walletAddress?: string | null): Promise<User> {
   const userKey = `user:${userId}`;
-  const existing = await kv.get(userKey);
+  const existing = await kvStore.get(userKey);
   const normalizedWallet = normalizeWalletAddress(walletAddress);
 
   if (existing) {
@@ -168,7 +206,7 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
       stored.wallet_address !== normalizedWallet
     ) {
       stored.wallet_address = normalizedWallet;
-      await kv.set(userKey, JSON.stringify(stored));
+      await kvStore.set(userKey, JSON.stringify(stored));
       return stored;
     }
     return stored;
@@ -188,14 +226,14 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
         : null,
   };
 
-  await kv.set(userKey, JSON.stringify(newUser));
+  await kvStore.set(userKey, JSON.stringify(newUser));
   return newUser;
 }
 
 // Helper to update user
 async function updateUser(user: User): Promise<void> {
   const userKey = `user:${user.id}`;
-  await kv.set(userKey, JSON.stringify(user));
+  await kvStore.set(userKey, JSON.stringify(user));
 }
 
 // Enable logger
@@ -221,11 +259,13 @@ app.get("/make-server-0f597298/health", (c) => {
 // Initialize user (called on app load)
 app.post("/make-server-0f597298/user/init", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const body = await c.req.json().catch(() => ({}));
     const walletAddress = resolveWalletAddressForRequest(
@@ -249,7 +289,7 @@ app.post("/make-server-0f597298/user/init", async (c) => {
       user_id: authUser.id,
       timestamp: new Date().toISOString(),
     };
-    await kv.set(sessionKey, JSON.stringify(sessionData));
+    await kvStore.set(sessionKey, JSON.stringify(sessionData));
     
     return c.json({
       user: {
@@ -268,11 +308,13 @@ app.post("/make-server-0f597298/user/init", async (c) => {
 // Get user balance
 app.get("/make-server-0f597298/user/balance", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -297,11 +339,13 @@ app.get("/make-server-0f597298/user/balance", async (c) => {
 // Kept for backward compatibility
 app.get("/make-server-0f597298/ads/next", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     return c.json({
       id: 'default_ad',
@@ -318,11 +362,13 @@ app.get("/make-server-0f597298/ads/next", async (c) => {
 // Complete ad watch
 app.post("/make-server-0f597298/ads/complete", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const body = await c.req.json();
     const { ad_id, wallet_address: walletAddressFromBody } = body;
@@ -358,7 +404,7 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     // Check daily limit
     const today = new Date().toISOString().split('T')[0];
     const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kv.get(dailyCountKey);
+    const dailyCountStr = await kvStore.get(dailyCountKey);
     const dailyCount = dailyCountStr ? parseInt(dailyCountStr) : 0;
     
     if (dailyCount >= DAILY_VIEW_LIMIT) {
@@ -375,7 +421,7 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     await updateUser(user);
     
     // Update daily count
-    await kv.set(dailyCountKey, String(dailyCount + 1));
+    await kvStore.set(dailyCountKey, String(dailyCount + 1));
     
     // Log watch for analytics
     const watchLogKey = `watch:${authUser.id}:${Date.now()}`;
@@ -387,7 +433,7 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
       multiplier: multiplier,
       created_at: new Date().toISOString(),
     };
-    await kv.set(watchLogKey, JSON.stringify(watchLog));
+    await kvStore.set(watchLogKey, JSON.stringify(watchLog));
     
     return c.json({
       success: true,
@@ -405,11 +451,13 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
 // Create boost order
 app.post("/make-server-0f597298/orders/create", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const body = await c.req.json();
     const { boost_level, wallet_address: walletAddressFromBody } = body;
@@ -447,7 +495,7 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
       created_at: new Date().toISOString(),
     };
     
-    await kv.set(`order:${orderId}`, JSON.stringify(order));
+    await kvStore.set(`order:${orderId}`, JSON.stringify(order));
     
     // Get merchant address from env
     const merchantAddress = Deno.env.get('VITE_TON_MERCHANT_ADDRESS') || 'UQD_merchant_address_placeholder';
@@ -469,11 +517,13 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
 // Check order status
 app.get("/make-server-0f597298/orders/:orderId", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -483,7 +533,7 @@ app.get("/make-server-0f597298/orders/:orderId", async (c) => {
     await getOrCreateUser(authUser.id, walletAddress);
 
     const orderId = c.req.param('orderId');
-    const orderData = await kv.get(`order:${orderId}`);
+    const orderData = await kvStore.get(`order:${orderId}`);
     
     if (!orderData) {
       return c.json({ error: 'Order not found' }, 404);
@@ -512,14 +562,16 @@ app.get("/make-server-0f597298/orders/:orderId", async (c) => {
 // Manually confirm order (for demo purposes - in production, use TON API webhook)
 app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const orderId = c.req.param('orderId');
-    const orderData = await kv.get(`order:${orderId}`);
+    const orderData = await kvStore.get(`order:${orderId}`);
     
     if (!orderData) {
       return c.json({ error: 'Order not found' }, 404);
@@ -554,7 +606,7 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
     // Update order status
     order.status = 'paid';
     order.tx_hash = txHash;
-    await kv.set(`order:${orderId}`, JSON.stringify(order));
+    await kvStore.set(`order:${orderId}`, JSON.stringify(order));
     
     // Update user boost
     const user = await getOrCreateUser(authUser.id, walletAddress);
@@ -584,11 +636,13 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
 // Get user stats
 app.get("/make-server-0f597298/stats", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -599,7 +653,7 @@ app.get("/make-server-0f597298/stats", async (c) => {
     
     // Get watch logs
     const watchLogsPrefix = `watch:${authUser.id}:`;
-    const watchLogs = await kv.getByPrefix(watchLogsPrefix);
+    const watchLogs = await kvStore.getByPrefix(watchLogsPrefix);
     
     const totalWatches = watchLogs.length;
     const totalEarned = watchLogs.reduce((sum, log) => {
@@ -615,13 +669,13 @@ app.get("/make-server-0f597298/stats", async (c) => {
     
     // Get session count
     const sessionPrefix = `session:${authUser.id}:`;
-    const sessions = await kv.getByPrefix(sessionPrefix);
+    const sessions = await kvStore.getByPrefix(sessionPrefix);
     const totalSessions = sessions.length;
     
     // Get today's watch count
     const today = new Date().toISOString().split('T')[0];
     const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kv.get(dailyCountKey);
+    const dailyCountStr = await kvStore.get(dailyCountKey);
     const todayWatches = dailyCountStr ? parseInt(dailyCountStr) : 0;
     
     return c.json({
@@ -645,11 +699,13 @@ app.get("/make-server-0f597298/stats", async (c) => {
 // Get reward claim status
 app.get("/make-server-0f597298/rewards/status", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -660,7 +716,7 @@ app.get("/make-server-0f597298/rewards/status", async (c) => {
 
     // Get all claimed rewards for this user
     const claimedPrefix = `reward_claim:${authUser.id}:`;
-    const claimedRewards = await kv.getByPrefix(claimedPrefix);
+    const claimedRewards = await kvStore.getByPrefix(claimedPrefix);
     
     // Extract partner IDs from keys
     const claimedPartners = claimedRewards.map(value => {
@@ -681,11 +737,13 @@ app.get("/make-server-0f597298/rewards/status", async (c) => {
 // Claim partner reward
 app.post("/make-server-0f597298/rewards/claim", async (c) => {
   try {
-    const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
-    if (!authUser) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
+
+    if (!authResult.ok) {
+      return c.json({ error: authResult.message }, authResult.status);
     }
+
+    const authUser = authResult.user;
     
     const body = await c.req.json();
     const { partner_id, wallet_address: walletAddressFromBody } = body;
@@ -696,7 +754,7 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     
     // Check if already claimed
     const claimKey = `reward_claim:${authUser.id}:${partner_id}`;
-    const existingClaim = await kv.get(claimKey);
+    const existingClaim = await kvStore.get(claimKey);
     
     if (existingClaim) {
       return c.json({ error: 'Reward already claimed' }, 400);
@@ -729,11 +787,11 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
       reward: reward_amount,
       claimed_at: new Date().toISOString(),
     };
-    await kv.set(claimKey, JSON.stringify(claim));
+    await kvStore.set(claimKey, JSON.stringify(claim));
     
     // Log for analytics
     const rewardLogKey = `reward_log:${authUser.id}:${Date.now()}`;
-    await kv.set(rewardLogKey, JSON.stringify(claim));
+    await kvStore.set(rewardLogKey, JSON.stringify(claim));
     
     return c.json({
       success: true,
@@ -748,3 +806,5 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
 });
 
 Deno.serve(app.fetch);
+
+export { app, getUserFromAuth };
