@@ -107,10 +107,12 @@ export function WalletScreen() {
         '/orders/create',
         {
           method: 'POST',
-          body: JSON.stringify({ boost_level: boostLevel }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boost_level: boostLevel, wallet_address: user.address }),
         },
         user.accessToken,
-        user.id
+        user.id,
+        user.address
       );
 
       if (orderData) {
@@ -134,12 +136,14 @@ export function WalletScreen() {
             // Confirm payment on server
             const result = await makeRequest<ConfirmResponse>(
               `/orders/${orderData.order_id}/confirm`,
-              { 
+              {
                 method: 'POST',
-                body: JSON.stringify({ tx_hash: txResult.boc }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tx_hash: txResult.boc, wallet_address: user.address }),
               },
               user.accessToken,
-              user.id
+              user.id,
+              user.address
             );
 
             if (result) {
@@ -167,9 +171,14 @@ export function WalletScreen() {
 
     const result = await makeRequest<ConfirmResponse>(
       `/orders/${pendingOrder.order_id}/confirm`,
-      { method: 'POST' },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_address: user.address }),
+      },
       user.accessToken,
-      user.id
+      user.id,
+      user.address
     );
 
     if (result) {

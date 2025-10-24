@@ -30,7 +30,8 @@ export function StatsScreen() {
         '/stats',
         { method: 'GET' },
         user.accessToken,
-        user.id
+        user.id,
+        user.address
       );
 
       if (data && isActive) {

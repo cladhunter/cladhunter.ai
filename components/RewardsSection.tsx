@@ -42,7 +42,8 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           '/rewards/status',
           { method: 'GET' },
           user.accessToken,
-          user.id
+          user.id,
+          user.address
         );
 
         if (response && isActive) {
@@ -80,14 +81,17 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           '/rewards/claim',
           {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               partner_id: partner.id,
               partner_name: partner.name,
               reward_amount: partner.reward,
+              wallet_address: user.address,
             }),
           },
           user.accessToken,
-          user.id
+          user.id,
+          user.address
         );
 
         if (response?.success) {

@@ -83,6 +83,54 @@ function normalizeAnonUserId(userIdHeader: string | null): string | null {
   return `ton_${sanitized}`;
 }
 
+function sanitizeWalletAddressForUserId(address: string): string {
+  return address.replace(/[^A-Za-z0-9_-]/g, '');
+}
+
+function normalizeWalletAddress(address: string | null | undefined): string | null {
+  if (!address) {
+    return null;
+  }
+
+  const trimmed = address.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.length > 256 ? trimmed.slice(0, 256) : trimmed;
+}
+
+function walletMatchesUserId(userId: string, walletAddress: string): boolean {
+  if (!userId.startsWith('ton_')) {
+    return true;
+  }
+
+  const sanitized = sanitizeWalletAddressForUserId(walletAddress);
+  if (!sanitized) {
+    return false;
+  }
+
+  return `ton_${sanitized}` === userId;
+}
+
+function resolveWalletAddressForRequest(
+  userId: string,
+  headerAddress: string | null,
+  bodyAddress?: string | null | undefined,
+): string | null {
+  const normalizedHeader = normalizeWalletAddress(headerAddress);
+  if (normalizedHeader && walletMatchesUserId(userId, normalizedHeader)) {
+    return normalizedHeader;
+  }
+
+  const normalizedBody = normalizeWalletAddress(bodyAddress);
+  if (normalizedBody && walletMatchesUserId(userId, normalizedBody)) {
+    return normalizedBody;
+  }
+
+  return null;
+}
+
 async function getUserFromAuth(authHeader: string | null, userIdHeader: string | null): Promise<{ id: string } | null> {
   if (!authHeader) return null;
 
@@ -107,16 +155,21 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
 }
 
 // Helper to get or create user
-async function getOrCreateUser(userId: string): Promise<User> {
+async function getOrCreateUser(userId: string, walletAddress?: string | null): Promise<User> {
   const userKey = `user:${userId}`;
   const existing = await kv.get(userKey);
-  const walletAddress = userId.startsWith('ton_') ? userId.slice(4) : null;
+  const normalizedWallet = normalizeWalletAddress(walletAddress);
 
   if (existing) {
     const stored = JSON.parse(existing) as User;
-    if (!stored.wallet_address && walletAddress) {
-      stored.wallet_address = walletAddress;
+    if (
+      normalizedWallet &&
+      walletMatchesUserId(userId, normalizedWallet) &&
+      stored.wallet_address !== normalizedWallet
+    ) {
+      stored.wallet_address = normalizedWallet;
       await kv.set(userKey, JSON.stringify(stored));
+      return stored;
     }
     return stored;
   }
@@ -129,7 +182,10 @@ async function getOrCreateUser(userId: string): Promise<User> {
     last_watch_at: null,
     boost_expires_at: null,
     created_at: new Date().toISOString(),
-    wallet_address: walletAddress,
+    wallet_address:
+      normalizedWallet && walletMatchesUserId(userId, normalizedWallet)
+        ? normalizedWallet
+        : null,
   };
 
   await kv.set(userKey, JSON.stringify(newUser));
@@ -171,7 +227,14 @@ app.post("/make-server-0f597298/user/init", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
-    const user = await getOrCreateUser(authUser.id);
+    const body = await c.req.json().catch(() => ({}));
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+      body?.wallet_address,
+    );
+
+    const user = await getOrCreateUser(authUser.id, walletAddress);
     
     // Check if boost has expired
     if (user.boost_expires_at && new Date(user.boost_expires_at) < new Date()) {
@@ -211,7 +274,12 @@ app.get("/make-server-0f597298/user/balance", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
-    const user = await getOrCreateUser(authUser.id);
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+    );
+
+    const user = await getOrCreateUser(authUser.id, walletAddress);
     
     return c.json({
       energy: user.energy,
@@ -257,14 +325,20 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     }
     
     const body = await c.req.json();
-    const { ad_id } = body;
+    const { ad_id, wallet_address: walletAddressFromBody } = body;
     
     if (!ad_id) {
       return c.json({ error: 'Missing ad_id' }, 400);
     }
     
     // Get user
-    const user = await getOrCreateUser(authUser.id);
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+      walletAddressFromBody,
+    );
+
+    const user = await getOrCreateUser(authUser.id, walletAddress);
     
     // Check cooldown
     if (user.last_watch_at) {
@@ -338,7 +412,15 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
     }
     
     const body = await c.req.json();
-    const { boost_level } = body;
+    const { boost_level, wallet_address: walletAddressFromBody } = body;
+
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+      walletAddressFromBody,
+    );
+
+    await getOrCreateUser(authUser.id, walletAddress);
     
     if (typeof boost_level !== 'number' || boost_level < 1 || boost_level > 4) {
       return c.json({ error: 'Invalid boost_level' }, 400);
@@ -393,6 +475,13 @@ app.get("/make-server-0f597298/orders/:orderId", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+    );
+
+    await getOrCreateUser(authUser.id, walletAddress);
+
     const orderId = c.req.param('orderId');
     const orderData = await kv.get(`order:${orderId}`);
     
@@ -448,6 +537,11 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
 
     // Get tx_hash from request body if provided
     const body = await c.req.json().catch(() => ({}));
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+      body?.wallet_address,
+    );
     const txHash = body.tx_hash || 'demo_tx_' + Date.now();
     
     // TODO: In production, verify the transaction on TON blockchain
@@ -463,7 +557,7 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
     await kv.set(`order:${orderId}`, JSON.stringify(order));
     
     // Update user boost
-    const user = await getOrCreateUser(authUser.id);
+    const user = await getOrCreateUser(authUser.id, walletAddress);
     user.boost_level = order.boost_level;
     
     const boost = BOOSTS.find(b => b.level === order.boost_level);
@@ -496,7 +590,12 @@ app.get("/make-server-0f597298/stats", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
-    const user = await getOrCreateUser(authUser.id);
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+    );
+
+    const user = await getOrCreateUser(authUser.id, walletAddress);
     
     // Get watch logs
     const watchLogsPrefix = `watch:${authUser.id}:`;
@@ -552,6 +651,13 @@ app.get("/make-server-0f597298/rewards/status", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
     
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+    );
+
+    await getOrCreateUser(authUser.id, walletAddress);
+
     // Get all claimed rewards for this user
     const claimedPrefix = `reward_claim:${authUser.id}:`;
     const claimedRewards = await kv.getByPrefix(claimedPrefix);
@@ -582,7 +688,7 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     }
     
     const body = await c.req.json();
-    const { partner_id } = body;
+    const { partner_id, wallet_address: walletAddressFromBody } = body;
     
     if (!partner_id || typeof partner_id !== 'string') {
       return c.json({ error: 'Missing or invalid partner_id' }, 400);
@@ -604,7 +710,13 @@ app.post("/make-server-0f597298/rewards/claim", async (c) => {
     }
     
     // Get user
-    const user = await getOrCreateUser(authUser.id);
+    const walletAddress = resolveWalletAddressForRequest(
+      authUser.id,
+      c.req.header('X-Wallet-Address'),
+      walletAddressFromBody,
+    );
+
+    const user = await getOrCreateUser(authUser.id, walletAddress);
     
     // Add reward to user balance
     user.energy += reward_amount;
