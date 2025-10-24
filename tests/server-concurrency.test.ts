@@ -300,3 +300,37 @@ describe('supabase edge function concurrency', () => {
     incrementSpy.mockRestore();
   });
 });
+
+describe('reward claim status', () => {
+  it('returns claimed partners even when legacy records are malformed', async () => {
+    const app = await loadApp();
+    const headers = createHeaders();
+
+    const claimResponse = await app.request('http://localhost/make-server-0f597298/rewards/claim', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ partner_id: 'telegram_cladhunter_official' }),
+    });
+
+    expect(claimResponse.status).toBe(200);
+
+    inMemory.set(
+      `reward_claim:${headers['X-User-ID']!}:legacy_string`,
+      '"{\\"partner_id\\":\\"legacy_partner\\"}"',
+    );
+    inMemory.set(`reward_claim:${headers['X-User-ID']!}:malformed`, 'not-json');
+
+    const statusResponse = await app.request('http://localhost/make-server-0f597298/rewards/status', {
+      method: 'GET',
+      headers,
+    });
+
+    expect(statusResponse.status).toBe(200);
+    const statusData = await statusResponse.json();
+
+    expect(statusData.claimed_partners).toEqual(
+      expect.arrayContaining(['telegram_cladhunter_official', 'legacy_partner']),
+    );
+    expect(statusData.claimed_partners).not.toContain('malformed');
+  });
+});
