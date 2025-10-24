@@ -9,6 +9,14 @@ const kvStore = (globalThis as Record<string, unknown> & {
   __kvOverride?: typeof kv;
 }).__kvOverride ?? kv;
 
+const isKvErrorCode = (error: unknown, code: string) =>
+  Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: string | null }).code === code,
+  );
+
 const app = new Hono().basePath('/make-server-0f597298');
 
 type PartnerConfig = {
@@ -213,9 +221,11 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
 }
 
 // Helper to get or create user
+const buildUserKey = (userId: string): string => `user:${userId}`;
+
 async function getOrCreateUser(userId: string, walletAddress?: string | null): Promise<User> {
-  const userKey = `user:${userId}`;
-  const existing = await kvStore.get(userKey);
+  const key = buildUserKey(userId);
+  const existing = await kvStore.get(key);
   const normalizedWallet = normalizeWalletAddress(walletAddress);
 
   if (existing) {
@@ -226,7 +236,7 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
       stored.wallet_address !== normalizedWallet
     ) {
       stored.wallet_address = normalizedWallet;
-      await kvStore.set(userKey, JSON.stringify(stored));
+      await kvStore.set(key, JSON.stringify(stored));
       return stored;
     }
     return stored;
@@ -246,14 +256,14 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
         : null,
   };
 
-  await kvStore.set(userKey, JSON.stringify(newUser));
+  await kvStore.set(key, JSON.stringify(newUser));
   return newUser;
 }
 
 // Helper to update user
 async function updateUser(user: User): Promise<void> {
-  const userKey = `user:${user.id}`;
-  await kvStore.set(userKey, JSON.stringify(user));
+  const key = buildUserKey(user.id);
+  await kvStore.set(key, JSON.stringify(user));
 }
 
 // Enable logger
@@ -426,23 +436,36 @@ app.post("/ads/complete", async (c) => {
     const dailyCountKey = `watch_count:${authUser.id}:${today}`;
     const dailyCountStr = await kvStore.get(dailyCountKey);
     const dailyCount = dailyCountStr ? parseInt(dailyCountStr) : 0;
-    
+
     if (dailyCount >= DAILY_VIEW_LIMIT) {
       return c.json({ error: 'Daily limit reached' }, 429);
     }
-    
+
     // Calculate reward with boost multiplier
     const multiplier = boostMultiplier(user.boost_level);
     const energyReward = Math.floor(BASE_AD_REWARD * multiplier);
-    
-    // Update user
-    user.energy += energyReward;
-    user.last_watch_at = new Date().toISOString();
-    await updateUser(user);
-    
-    // Update daily count
-    await kvStore.set(dailyCountKey, String(dailyCount + 1));
-    
+    const nowIso = new Date().toISOString();
+
+    let incrementResult: { user: User; watch_count: number };
+    try {
+      incrementResult = await kvStore.incrementUserEnergyAndWatchCount<User>({
+        userKey: buildUserKey(authUser.id),
+        energyDelta: energyReward,
+        lastWatchAt: nowIso,
+        watchCountKey: dailyCountKey,
+        watchIncrement: 1,
+        dailyLimit: DAILY_VIEW_LIMIT,
+      });
+    } catch (error) {
+      if (isKvErrorCode(error, 'P0001')) {
+        return c.json({ error: 'Daily limit reached' }, 429);
+      }
+      throw error;
+    }
+
+    const updatedUser = incrementResult.user;
+    const updatedWatchCount = incrementResult.watch_count;
+
     // Log watch for analytics
     const watchLogKey = `watch:${authUser.id}:${Date.now()}`;
     const watchLog = {
@@ -458,9 +481,9 @@ app.post("/ads/complete", async (c) => {
     return c.json({
       success: true,
       reward: energyReward,
-      new_balance: user.energy,
+      new_balance: updatedUser.energy,
       multiplier: multiplier,
-      daily_watches_remaining: DAILY_VIEW_LIMIT - dailyCount - 1,
+      daily_watches_remaining: Math.max(DAILY_VIEW_LIMIT - updatedWatchCount, 0),
     });
   } catch (error) {
     console.log('Error completing ad watch:', error);
@@ -786,13 +809,13 @@ app.post("/rewards/claim", async (c) => {
     }
 
     // Check if already claimed
-    const claimKey = `reward_claim:${authUser.id}:${partner_id}`;
-    const existingClaim = await kvStore.get(claimKey);
+    // Get partner config from body (frontend will send it)
+    const { partner_name, reward_amount } = body;
 
-    if (existingClaim) {
-      return c.json({ error: 'Reward already claimed' }, 400);
+    if (!reward_amount || typeof reward_amount !== 'number') {
+      return c.json({ error: 'Invalid reward amount' }, 400);
     }
-
+    
     // Get user
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -800,21 +823,32 @@ app.post("/rewards/claim", async (c) => {
       walletAddressFromBody,
     );
 
-    const user = await getOrCreateUser(authUser.id, walletAddress);
+    await getOrCreateUser(authUser.id, walletAddress);
 
-    // Add reward to user balance
-    const rewardAmount = partnerConfig.reward;
-    user.energy += rewardAmount;
-    await updateUser(user);
-
-    // Record claim
     const claim = {
       partner_id: partner_id,
       user_id: authUser.id,
       reward: rewardAmount,
       claimed_at: new Date().toISOString(),
     };
-    await kvStore.set(claimKey, JSON.stringify(claim));
+
+    let claimResult: { user: User };
+    const claimKey = `reward_claim:${authUser.id}:${partner_id}`;
+    try {
+      claimResult = await kvStore.claimPartnerRewardAtomic<User, typeof claim>({
+        userKey: buildUserKey(authUser.id),
+        energyDelta: reward_amount,
+        claimKey,
+        claimValue: claim,
+      });
+    } catch (error) {
+      if (isKvErrorCode(error, '23505')) {
+        return c.json({ error: 'Reward already claimed' }, 400);
+      }
+      throw error;
+    }
+
+    const claimedUser = claimResult.user;
 
     // Log for analytics
     const rewardLogKey = `reward_log:${authUser.id}:${Date.now()}`;
@@ -822,9 +856,9 @@ app.post("/rewards/claim", async (c) => {
 
     return c.json({
       success: true,
-      reward: rewardAmount,
-      new_balance: user.energy,
-      partner_name: partnerConfig.name,
+      reward: reward_amount,
+      new_balance: claimedUser.energy,
+      partner_name: partner_name || 'Partner',
     });
   } catch (error) {
     console.log('Error claiming reward:', error);
