@@ -431,15 +431,8 @@ app.post("/ads/complete", async (c) => {
       }
     }
     
-    // Check daily limit
     const today = new Date().toISOString().split('T')[0];
-    const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kvStore.get(dailyCountKey);
-    const dailyCount = dailyCountStr ? parseInt(dailyCountStr) : 0;
-
-    if (dailyCount >= DAILY_VIEW_LIMIT) {
-      return c.json({ error: 'Daily limit reached' }, 429);
-    }
+    const watchCountKey = `watch_count:${authUser.id}:${today}`;
 
     // Calculate reward with boost multiplier
     const multiplier = boostMultiplier(user.boost_level);
@@ -452,7 +445,7 @@ app.post("/ads/complete", async (c) => {
         userKey: buildUserKey(authUser.id),
         energyDelta: energyReward,
         lastWatchAt: nowIso,
-        watchCountKey: dailyCountKey,
+        watchCountKey,
         watchIncrement: 1,
         dailyLimit: DAILY_VIEW_LIMIT,
       });
@@ -828,7 +821,7 @@ app.post("/rewards/claim", async (c) => {
     const claim = {
       partner_id: partner_id,
       user_id: authUser.id,
-      reward: rewardAmount,
+      reward: reward_amount,
       claimed_at: new Date().toISOString(),
     };
 

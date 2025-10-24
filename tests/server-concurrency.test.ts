@@ -6,13 +6,15 @@ const createHeaders = () => ({
   'Content-Type': 'application/json',
 });
 
+let inMemory: Map<string, string>;
+
 const setupEnvironment = () => {
   process.env.PUBLIC_SUPABASE_ANON_KEY = 'public-anon-key';
   delete process.env.SUPABASE_ANON_KEY;
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
 
-  const inMemory = new Map<string, string>();
+  inMemory = new Map<string, string>();
 
   (globalThis as any).__kvOverride = {
     async set(key: string, value: any) {
@@ -173,9 +175,9 @@ describe('supabase edge function concurrency', () => {
     expect(initResponse.status).toBe(200);
 
     const rewardPayload = {
-      partner_id: 'partner_test',
-      reward_amount: 100,
-      partner_name: 'Test Partner',
+      partner_id: 'telegram_cladhunter_official',
+      reward_amount: 1000,
+      partner_name: 'Cladhunter Official',
     };
 
     const [first, second] = await Promise.all([
@@ -199,9 +201,52 @@ describe('supabase edge function concurrency', () => {
     expect(conflictCount).toBe(1);
 
     const successBody = await responses.find((response) => response.status === 200)!.json();
-    expect(successBody.new_balance).toBe(100);
+    expect(successBody.new_balance).toBe(1000);
 
     const conflictBody = await responses.find((response) => response.status === 400)!.json();
     expect(conflictBody.error).toBe('Reward already claimed');
+  });
+
+  it('surfaces daily limit errors from kv RPC as 429 responses', async () => {
+    const app = await loadApp();
+    const headers = createHeaders();
+
+    const initResponse = await app.request('http://localhost/make-server-0f597298/user/init', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({}),
+    });
+
+    expect(initResponse.status).toBe(200);
+
+    const kvOverride = (globalThis as any).__kvOverride as {
+      incrementUserEnergyAndWatchCount: (...args: any[]) => Promise<any>;
+    };
+    const originalIncrement = kvOverride.incrementUserEnergyAndWatchCount;
+    const incrementSpy = vi
+      .spyOn(kvOverride, 'incrementUserEnergyAndWatchCount')
+      .mockImplementationOnce(async (...args: any[]) => {
+        const error: any = new Error('limit exceeded');
+        error.code = 'P0001';
+        throw error;
+      })
+      .mockImplementation(originalIncrement);
+
+    const response = await app.request('http://localhost/make-server-0f597298/ads/complete', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ad_id: 'test_ad' }),
+    });
+
+    expect(response.status).toBe(429);
+    const payload = await response.json();
+    expect(payload.error).toBe('Daily limit reached');
+
+    expect(incrementSpy).toHaveBeenCalledTimes(1);
+    const errorResult = incrementSpy.mock.results[0];
+    expect(errorResult?.value).toBeInstanceOf(Promise);
+    await expect(errorResult?.value).rejects.toMatchObject({ code: 'P0001' });
+
+    incrementSpy.mockRestore();
   });
 });
