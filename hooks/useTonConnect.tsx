@@ -1,5 +1,5 @@
 import { useTonConnectUI, useTonWallet, useTonAddress } from '@tonconnect/ui-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 export interface TonWallet {
   address: string;
@@ -13,13 +13,23 @@ export function useTonConnect() {
   const userFriendlyAddress = useTonAddress();
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const wallet: TonWallet | null = tonWallet
-    ? {
-        address: userFriendlyAddress || tonWallet.account.address,
-        chain: tonWallet.account.chain,
-        publicKey: tonWallet.account.publicKey || '',
-      }
-    : null;
+  const wallet: TonWallet | null = useMemo(() => {
+    if (!tonWallet) {
+      return null;
+    }
+
+    return {
+      address: userFriendlyAddress || tonWallet.account.address,
+      chain: tonWallet.account.chain,
+      publicKey: tonWallet.account.publicKey || '',
+    };
+  }, [
+    tonWallet,
+    userFriendlyAddress,
+    tonWallet?.account.address,
+    tonWallet?.account.chain,
+    tonWallet?.account.publicKey,
+  ]);
 
   const connect = useCallback(async () => {
     setIsConnecting(true);
