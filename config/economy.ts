@@ -18,10 +18,10 @@ export interface Boost {
 
 export const BOOSTS: Boost[] = [
   { level: 0, name: "Base", multiplier: 1, costTon: 0 },
-  { level: 1, name: "Bronze", multiplier: 1.25, costTon: 0.3, durationDays: 7 },
-  { level: 2, name: "Silver", multiplier: 1.5, costTon: 0.7, durationDays: 14 },
-  { level: 3, name: "Gold", multiplier: 2, costTon: 1.5, durationDays: 30 },
-  { level: 4, name: "Diamond", multiplier: 3, costTon: 3.5, durationDays: 60 },
+  { level: 1, name: "Bronze", multiplier: 1.25, costTon: 0.5, durationDays: 7 },
+  { level: 2, name: "Silver", multiplier: 1.5, costTon: 1.2, durationDays: 14 },
+  { level: 3, name: "Gold", multiplier: 2, costTon: 2.8, durationDays: 30 },
+  { level: 4, name: "Diamond", multiplier: 3, costTon: 6, durationDays: 60 },
 ];
 
 export const DAILY_VIEW_LIMIT = 200;

@@ -53,15 +53,22 @@ export function useTonConnect() {
       }
 
       try {
+        const message: {
+          address: string;
+          amount: string;
+          payload?: string;
+        } = {
+          address: params.to,
+          amount: params.amount,
+        };
+
+        if (params.payload) {
+          message.payload = params.payload;
+        }
+
         const transaction = {
           validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes
-          messages: [
-            {
-              address: params.to,
-              amount: params.amount,
-              payload: params.payload,
-            },
-          ],
+          messages: [message],
         };
 
         const result = await tonConnectUI.sendTransaction(transaction);

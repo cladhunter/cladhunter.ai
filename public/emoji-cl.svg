@@ -1,0 +1,25 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="clad-gradient" x1="16" y1="12" x2="118" y2="124" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3E8BFF" />
+      <stop offset="1" stop-color="#0B4CFF" />
+    </linearGradient>
+    <linearGradient id="clad-highlight" x1="20" y1="18" x2="92" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.65" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+    <filter id="clad-shadow" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feOffset dy="4" />
+      <feGaussianBlur stdDeviation="6" />
+      <feComposite in2="SourceAlpha" operator="out" />
+      <feColorMatrix type="matrix" values="0 0 0 0 0   0 0 0 0 0.3   0 0 0 0 0.8  0 0 0 0.25 0" />
+      <feBlend in="SourceGraphic" />
+    </filter>
+  </defs>
+  <g filter="url(#clad-shadow)">
+    <rect x="14" y="10" width="100" height="100" rx="24" fill="url(#clad-gradient)" />
+    <rect x="14" y="10" width="100" height="100" rx="24" fill="url(#clad-highlight)" />
+  </g>
+  <path d="M54.4 85.5C42.72 85.5 34 76.32 34 63.36C34 50.22 42.88 41.5 54.92 41.5C62.74 41.5 68.32 45.16 71.44 51.12L62.96 55.44C61.12 52.02 58.4 50.08 54.72 50.08C48.52 50.08 44.52 55.02 44.52 63.2C44.52 71.14 48.28 75.94 54.24 75.94C58.48 75.94 61.36 73.76 63.28 69.92L72.12 74.02C68.88 80.6 62.8 85.5 54.4 85.5Z" fill="white" />
+  <path d="M77.16 84.72V42.28H90.56V74.84H103.4V84.72H77.16Z" fill="white" />
+</svg>
