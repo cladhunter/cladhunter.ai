@@ -6,6 +6,24 @@ export function useApi() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const formatUserIdForHeader = useCallback((userId: string) => {
+    const trimmed = userId.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (trimmed.startsWith('anon_') || trimmed.startsWith('ton_')) {
+      return trimmed;
+    }
+
+    const sanitized = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!sanitized) {
+      return null;
+    }
+
+    return `ton_${sanitized}`;
+  }, []);
+
   const makeRequest = useCallback(async <T,>(
     endpoint: string,
     options: RequestInit = {},
@@ -22,7 +40,10 @@ export function useApi() {
       );
 
       if (userId && (!accessToken || accessToken === '')) {
-        baseHeaders.set('X-User-ID', userId);
+        const headerUserId = formatUserIdForHeader(userId);
+        if (headerUserId) {
+          baseHeaders.set('X-User-ID', headerUserId);
+        }
       }
 
       const requestHeaders = new Headers(baseHeaders);
@@ -53,7 +74,7 @@ export function useApi() {
       setLoading(false);
       return null;
     }
-  }, []);
+  }, [formatUserIdForHeader]);
 
   return { makeRequest, loading, error };
 }
