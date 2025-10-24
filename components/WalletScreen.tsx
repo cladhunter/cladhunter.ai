@@ -43,7 +43,7 @@ export function WalletScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
   const { makeRequest } = useApi();
-  const { sendTransaction, isConnected, wallet } = useTonConnect();
+  const { sendTransaction, isConnected, wallet, connect } = useTonConnect();
   
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
@@ -81,11 +81,21 @@ export function WalletScreen() {
   };
 
   const handleBuyBoost = async (boostLevel: number) => {
-    if (!user || processingBoost !== null) return;
+    if (processingBoost !== null) return;
 
     // Check if wallet is connected for TON payment
     if (!isConnected) {
       toast.error('Please connect your TON wallet first!');
+      try {
+        await connect();
+      } catch (connectError) {
+        console.error('Failed to open TON connect modal:', connectError);
+      }
+      return;
+    }
+
+    if (!user) {
+      toast.error('We could not read your wallet data. Please reconnect.');
       return;
     }
 
