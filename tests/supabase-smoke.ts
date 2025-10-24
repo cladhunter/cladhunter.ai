@@ -41,6 +41,49 @@ const inMemory = new Map<string, string>();
     }
     return results;
   },
+  async incrementUserEnergyAndWatchCount({
+    userKey,
+    energyDelta,
+    lastWatchAt,
+    watchCountKey,
+    watchIncrement,
+    dailyLimit,
+  }: any) {
+    const userRaw = inMemory.get(userKey);
+    if (!userRaw) {
+      throw new Error(`Missing user ${userKey}`);
+    }
+    const user = JSON.parse(userRaw);
+    const currentCountRaw = inMemory.get(watchCountKey);
+    const currentCount = currentCountRaw ? JSON.parse(currentCountRaw) : 0;
+    const nextCount = currentCount + watchIncrement;
+    if (typeof dailyLimit === 'number' && nextCount > dailyLimit) {
+      const error: any = new Error('DAILY_LIMIT_EXCEEDED');
+      error.code = 'P0001';
+      throw error;
+    }
+    user.energy += energyDelta;
+    user.last_watch_at = lastWatchAt;
+    inMemory.set(userKey, JSON.stringify(user));
+    inMemory.set(watchCountKey, JSON.stringify(nextCount));
+    return { user, watch_count: nextCount };
+  },
+  async claimPartnerRewardAtomic({ userKey, energyDelta, claimKey, claimValue }: any) {
+    if (inMemory.has(claimKey)) {
+      const error: any = new Error('REWARD_ALREADY_CLAIMED');
+      error.code = '23505';
+      throw error;
+    }
+    const userRaw = inMemory.get(userKey);
+    if (!userRaw) {
+      throw new Error(`Missing user ${userKey}`);
+    }
+    const user = JSON.parse(userRaw);
+    user.energy += energyDelta;
+    inMemory.set(userKey, JSON.stringify(user));
+    inMemory.set(claimKey, JSON.stringify(claimValue));
+    return { user };
+  },
 };
 
 (globalThis as any).Deno = {

@@ -12,6 +12,26 @@ CREATE TABLE kv_store_0f597298 (
 // This file provides a simple key-value interface for storing Figma Make data. It should be adequate for most small-scale use cases.
 import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 
+export class KvStoreError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "KvStoreError";
+    this.code = code;
+  }
+}
+
+type RpcError = {
+  message: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
+const toKvError = (error: RpcError): KvStoreError =>
+  new KvStoreError(error.message, error.code ?? undefined);
+
 const client = () => createClient(
   Deno.env.get("SUPABASE_URL"),
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
@@ -27,6 +47,92 @@ export const set = async (key: string, value: any): Promise<void> => {
   if (error) {
     throw new Error(error.message);
   }
+};
+
+const normalizeUserValue = <T = unknown>(value: T | string): T => {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      // fall through
+    }
+  }
+  return value as T;
+};
+
+interface IncrementParams {
+  userKey: string;
+  energyDelta: number;
+  lastWatchAt: string;
+  watchCountKey: string;
+  watchIncrement: number;
+  dailyLimit: number;
+}
+
+interface IncrementResult<TUser = any> {
+  user: TUser;
+  watch_count: number;
+}
+
+export const incrementUserEnergyAndWatchCount = async <TUser = any>(
+  params: IncrementParams,
+): Promise<IncrementResult<TUser>> => {
+  const supabase = client();
+  const { data, error } = await supabase.rpc(
+    "increment_user_energy_and_watch_count",
+    {
+      user_key: params.userKey,
+      energy_delta: params.energyDelta,
+      last_watch_at: params.lastWatchAt,
+      watch_count_key: params.watchCountKey,
+      watch_increment: params.watchIncrement,
+      daily_limit: params.dailyLimit,
+    },
+  );
+
+  if (error) {
+    throw toKvError(error as RpcError);
+  }
+
+  const result = (data ?? {}) as { user?: unknown; watch_count?: number };
+
+  return {
+    user: normalizeUserValue<TUser>(result.user ?? ({} as TUser)),
+    watch_count: Number(result.watch_count ?? 0),
+  };
+};
+
+interface ClaimRewardParams<TClaim = any> {
+  userKey: string;
+  energyDelta: number;
+  claimKey: string;
+  claimValue: TClaim;
+}
+
+interface ClaimRewardResult<TUser = any> {
+  user: TUser;
+}
+
+export const claimPartnerRewardAtomic = async <TUser = any, TClaim = any>(
+  params: ClaimRewardParams<TClaim>,
+): Promise<ClaimRewardResult<TUser>> => {
+  const supabase = client();
+  const { data, error } = await supabase.rpc("claim_partner_reward", {
+    user_key: params.userKey,
+    energy_delta: params.energyDelta,
+    claim_key: params.claimKey,
+    claim_value: params.claimValue,
+  });
+
+  if (error) {
+    throw toKvError(error as RpcError);
+  }
+
+  const result = (data ?? {}) as { user?: unknown };
+
+  return {
+    user: normalizeUserValue<TUser>(result.user ?? ({} as TUser)),
+  };
 };
 
 // Get retrieves a key-value pair from the database.
