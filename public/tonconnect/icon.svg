@@ -1,25 +1,20 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="30" y1="10" x2="150" y2="170" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1C1C1F" />
-      <stop offset="1" stop-color="#09090B" />
-    </linearGradient>
-    <linearGradient id="accent" x1="45" y1="30" x2="140" y2="150" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FF335A" />
-      <stop offset="1" stop-color="#FF0033" />
-    </linearGradient>
-    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%" filterUnits="objectBoundingBox" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="6" result="blur" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-  </defs>
-  <rect x="8" y="8" width="164" height="164" rx="36" fill="url(#bg)" stroke="#1F1F23" stroke-width="4" />
-  <g filter="url(#glow)">
-    <path d="M60 55h60c12 0 22 10 22 22v26c0 12-10 22-22 22H94l-14 18c-4 5-12 2-12-4v-14H60c-12 0-22-10-22-22V77c0-12 10-22 22-22Z" fill="url(#accent)" />
-  </g>
-  <path d="M76 70h28c6 0 10 4 10 10v4" stroke="#0B0B0F" stroke-width="10" stroke-linecap="round" />
-  <path d="M68 104h28c6 0 10-4 10-10v-4" stroke="#0B0B0F" stroke-width="10" stroke-linecap="round" />
+<svg width="512" height="512" viewBox="0 0 512 512"
+     xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-labelledby="title desc">
+  <title>🆑 Red CL Emoji</title>
+  <desc>Recreation of the red squared CL emoji with white bold letters</desc>
+
+  <!-- red background -->
+  <rect width="512" height="512" rx="96" fill="#E53935"/>
+
+  <!-- white letters -->
+  <text x="50%" y="68%"
+        fill="#FFFFFF"
+        font-family="Arial Black, Helvetica, sans-serif"
+        font-weight="900"
+        font-size="260"
+        text-anchor="middle"
+        letter-spacing="-10">
+    CL
+  </text>
 </svg>
