@@ -115,52 +115,56 @@ export function WalletScreen() {
         user.address
       );
 
-      if (orderData) {
-        // Send transaction via TON Connect
-        setIsSendingTx(true);
-        try {
-          const amountInNanoTon = Math.floor(orderData.amount * 1_000_000_000).toString();
-          const payloadForWallet = isValidTonPayload(orderData.payload)
-            ? orderData.payload
-            : undefined;
+      if (!orderData) {
+        toast.error('Unable to create boost order. Please configure the merchant wallet and try again.');
+        return;
+      }
 
-          const txResult = await sendTransaction({
-            to: orderData.address,
-            amount: amountInNanoTon,
-            ...(payloadForWallet ? { payload: payloadForWallet } : {}),
-          });
+      // Send transaction via TON Connect
+      setIsSendingTx(true);
+      try {
+        const amountInNanoTon = Math.floor(orderData.amount * 1_000_000_000).toString();
+        const payloadForWallet = isValidTonPayload(orderData.payload)
+          ? orderData.payload
+          : undefined;
 
-          if (txResult) {
-            toast.success('Transaction sent! Confirming boost...');
-            
-            // Confirm payment on server
-            const result = await makeRequest<ConfirmResponse>(
-              `/orders/${orderData.order_id}/confirm`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tx_hash: txResult.boc, wallet_address: user.address }),
-              },
-              user.accessToken,
-              user.id,
-              user.address
-            );
+        const txResult = await sendTransaction({
+          to: orderData.address,
+          amount: amountInNanoTon,
+          ...(payloadForWallet ? { payload: payloadForWallet } : {}),
+        });
 
-            if (result) {
-              toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
-              await refreshBalance();
-            }
+        if (txResult) {
+          toast.success('Transaction sent! Confirming boost...');
+
+          // Confirm payment on server
+          const result = await makeRequest<ConfirmResponse>(
+            `/orders/${orderData.order_id}/confirm`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tx_hash: txResult.boc, wallet_address: user.address }),
+            },
+            user.accessToken,
+            user.id,
+            user.address
+          );
+
+          if (result) {
+            toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
+            await refreshBalance();
           }
-        } catch (txError) {
-          console.error('Transaction error:', txError);
-          toast.error('Transaction failed. Please try again.');
-          setPendingOrder(orderData); // Set as pending for manual confirmation
-        } finally {
-          setIsSendingTx(false);
         }
+      } catch (txError) {
+        console.error('Transaction error:', txError);
+        toast.error('Transaction failed. Please try again.');
+        setPendingOrder(orderData); // Set as pending for manual confirmation
+      } finally {
+        setIsSendingTx(false);
       }
     } catch (error) {
       console.error('Error buying boost:', error);
+      toast.error('Unable to start boost purchase. Please configure the merchant wallet and try again.');
     } finally {
       setProcessingBoost(null);
     }
