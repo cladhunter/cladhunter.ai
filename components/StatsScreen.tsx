@@ -51,12 +51,13 @@ export function StatsScreen() {
   }, [user, makeRequest]);
 
   const totals = stats?.totals;
-  const totalMined = totals?.earned || 0;
+  const totalEnergy = totals?.energy || 0;
+  const totalEarned = totals?.earned || 0;
   const totalWatches = totals?.watches || 0;
   const totalSessions = totals?.sessions || 0;
   const todayWatches = totals?.today_watches || 0;
   const dailyLimit = totals?.daily_limit || 200;
-  const avgPerAd = totalWatches > 0 ? totalMined / totalWatches : 0;
+  const avgPerAd = totalWatches > 0 ? totalEarned / totalWatches : 0;
   const multiplier = stats?.boost.multiplier || 1;
   const boostLevel = stats?.boost.level || 0;
   const countryCode = stats?.country_code || 'ZZ';
@@ -90,8 +91,11 @@ export function StatsScreen() {
 
       {/* Total Mined Card */}
       <GlassCard className="p-5 mb-5 text-center" glowEffect>
-        <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL MINED</p>
-        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalMined.toFixed(1)} 🆑</p>
+        <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL ENERGY</p>
+        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalEnergy.toFixed(1)} 🆑</p>
+        <p className="text-white/40 text-[11px] uppercase tracking-wide mt-1">
+          Earned from ads: <span className="text-white">{totalEarned.toFixed(1)} 🆑</span>
+        </p>
         <div className="flex items-center justify-center gap-3 text-white/40 text-xs mt-2">
           <span>
             {todayWatches}/{dailyLimit} ads watched today
