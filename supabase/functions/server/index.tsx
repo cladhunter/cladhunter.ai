@@ -5,6 +5,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
 import { partnerRewards } from "../../../config/partners.ts";
 
+const DEFAULT_TON_MERCHANT_ADDRESS =
+  "UQDw8GgIlOX7SqLJKkpIB2JaOlU5n0g2qGifwtneUb1VMnVt" as const;
+
 const kvStore = (globalThis as Record<string, unknown> & {
   __kvOverride?: typeof kv;
 }).__kvOverride ?? kv;
@@ -615,14 +618,17 @@ app.post("/orders/create", async (c) => {
     
     await kvStore.set(`order:${orderId}`, JSON.stringify(order));
     
-    // Get merchant address from env
-    const merchantAddress = Deno.env.get('VITE_TON_MERCHANT_ADDRESS')?.trim();
+    // Get merchant address from env with default fallback
+    const configuredMerchantAddress = Deno.env.get('VITE_TON_MERCHANT_ADDRESS');
+    const merchantAddress =
+      configuredMerchantAddress && configuredMerchantAddress.trim()
+        ? configuredMerchantAddress.trim()
+        : DEFAULT_TON_MERCHANT_ADDRESS;
 
-    if (!merchantAddress) {
-      console.warn('[orders] Missing VITE_TON_MERCHANT_ADDRESS environment variable');
-      return c.json({
-        error: 'Merchant wallet address is not configured. Please contact support or configure VITE_TON_MERCHANT_ADDRESS.'
-      }, 500);
+    if (!configuredMerchantAddress || !configuredMerchantAddress.trim()) {
+      console.warn(
+        '[orders] Missing VITE_TON_MERCHANT_ADDRESS environment variable; falling back to default TON merchant address',
+      );
     }
 
     return c.json({

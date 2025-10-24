@@ -14,6 +14,8 @@ const setupEnvironment = () => {
   delete process.env.SUPABASE_ANON_KEY;
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
+  process.env.VITE_TON_MERCHANT_ADDRESS =
+    'UQDw8GgIlOX7SqLJKkpIB2JaOlU5n0g2qGifwtneUb1VMnVt';
 
   inMemory = new Map<string, string>();
 
@@ -199,6 +201,30 @@ describe('supabase edge function concurrency', () => {
     const balanceData = await balanceResponse.json();
     expect(balanceData.energy).toBe(rewardPerWatch * successResponses.length);
     expect(payloads.every((data) => data.daily_watches_remaining >= 0)).toBe(true);
+  });
+
+  it('returns the configured merchant address when creating boost orders', async () => {
+    const app = await loadApp();
+    const headers = createHeaders();
+
+    const initResponse = await app.request('http://localhost/make-server-0f597298/user/init', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({}),
+    });
+
+    expect(initResponse.status).toBe(200);
+
+    const orderResponse = await app.request('http://localhost/make-server-0f597298/orders/create', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ boost_level: 1 }),
+    });
+
+    expect(orderResponse.status).toBe(200);
+    const payload = await orderResponse.json();
+    expect(payload.address).toBe(process.env.VITE_TON_MERCHANT_ADDRESS);
+    expect(payload.amount).toBeGreaterThan(0);
   });
 
   it('prevents duplicate reward claims under concurrency', async () => {
