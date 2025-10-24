@@ -129,10 +129,10 @@ Blockchain (TON - Future Integration)
 | Level | Name | Multiplier | Price | Duration |
 |-------|------|------------|-------|----------|
 | 0 | Base | 1x | Free | - |
-| 1 | Bronze | 1.25x | 0.3 TON | 7 days |
-| 2 | Silver | 1.5x | 0.7 TON | 14 days |
-| 3 | Gold | 2x | 1.5 TON | 30 days |
-| 4 | Diamond | 3x | 3.5 TON | 60 days |
+| 1 | Bronze | 1.25x | 0.5 TON | 7 days |
+| 2 | Silver | 1.5x | 1.2 TON | 14 days |
+| 3 | Gold | 2x | 2.8 TON | 30 days |
+| 4 | Diamond | 3x | 6 TON | 60 days |
 
 ---
 
@@ -260,7 +260,7 @@ Edit `/config/ads.ts` to add video/image ads:
 ### Boost Levels
 ```typescript
 export const BOOSTS = [
-  { level: 1, name: "Bronze", multiplier: 1.25, costTon: 0.3, durationDays: 7 },
+  { level: 1, name: "Bronze", multiplier: 1.25, costTon: 0.5, durationDays: 7 },
   // Add more...
 ];
 ```
