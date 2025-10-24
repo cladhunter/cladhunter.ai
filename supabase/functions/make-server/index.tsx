@@ -15,6 +15,7 @@ interface User {
   boost_expires_at: string | null;
   created_at: string;
   wallet_address?: string | null;
+  country_code?: string | null;
 }
 
 interface Ad {
@@ -58,7 +59,11 @@ const BASE_AD_REWARD = 10;
 // Initialize Supabase client
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+type SupabaseClient = ReturnType<typeof createClient>;
+const supabaseOverride = (globalThis as Record<string, unknown> & {
+  __supabaseClientOverride?: SupabaseClient;
+}).__supabaseClientOverride;
+const supabase: SupabaseClient = supabaseOverride ?? createClient(supabaseUrl, supabaseServiceKey);
 
 // Helper to get user from auth token
 function normalizeAnonUserId(userIdHeader: string | null): string | null {
@@ -131,6 +136,63 @@ function resolveWalletAddressForRequest(
   return null;
 }
 
+function normalizeCountryCode(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!/^[A-Za-z]{2}$/.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed.toUpperCase();
+}
+
+function resolveCountryCode(
+  getHeader: (name: string) => string | null | undefined,
+  existing?: string | null,
+): string | null {
+  const cfHeader = getHeader('CF-IPCountry') ?? getHeader('cf-ipcountry');
+  const normalizedCf = normalizeCountryCode(cfHeader);
+  if (normalizedCf) {
+    return normalizedCf;
+  }
+
+  const forwardedFor = getHeader('X-Forwarded-For') ?? getHeader('x-forwarded-for');
+  if (forwardedFor) {
+    const forwardedMatch = forwardedFor.match(/country=([A-Za-z]{2})/i);
+    if (forwardedMatch) {
+      const normalizedForwarded = normalizeCountryCode(forwardedMatch[1]);
+      if (normalizedForwarded) {
+        return normalizedForwarded;
+      }
+    }
+  }
+
+  return existing ?? null;
+}
+
+async function trackUserSession(userId: string, countryCode: string | null, activityAt?: string) {
+  try {
+    const { error } = await supabase.rpc('track_user_session', {
+      p_user_id: userId,
+      p_activity_at: activityAt ?? new Date().toISOString(),
+      p_country_code: countryCode ?? null,
+    });
+
+    if (error) {
+      console.warn('[sessions] Failed to track session', error.message);
+    }
+  } catch (err) {
+    console.warn('[sessions] Unexpected error while tracking session', err);
+  }
+}
+
 async function getUserFromAuth(authHeader: string | null, userIdHeader: string | null): Promise<{ id: string } | null> {
   if (!authHeader) return null;
 
@@ -162,15 +224,26 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
 
   if (existing) {
     const stored = JSON.parse(existing) as User;
+    let requiresUpdate = false;
+
+    if (!('country_code' in stored) || stored.country_code === undefined) {
+      stored.country_code = null;
+      requiresUpdate = true;
+    }
+
     if (
       normalizedWallet &&
       walletMatchesUserId(userId, normalizedWallet) &&
       stored.wallet_address !== normalizedWallet
     ) {
       stored.wallet_address = normalizedWallet;
-      await kv.set(userKey, JSON.stringify(stored));
-      return stored;
+      requiresUpdate = true;
     }
+
+    if (requiresUpdate) {
+      await kv.set(userKey, JSON.stringify(stored));
+    }
+
     return stored;
   }
 
@@ -186,6 +259,7 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
       normalizedWallet && walletMatchesUserId(userId, normalizedWallet)
         ? normalizedWallet
         : null,
+    country_code: null,
   };
 
   await kv.set(userKey, JSON.stringify(newUser));
@@ -235,28 +309,33 @@ app.post("/make-server-0f597298/user/init", async (c) => {
     );
 
     const user = await getOrCreateUser(authUser.id, walletAddress);
-    
+
     // Check if boost has expired
     if (user.boost_expires_at && new Date(user.boost_expires_at) < new Date()) {
       user.boost_level = 0;
       user.boost_expires_at = null;
       await updateUser(user);
     }
-    
-    // Track session
-    const sessionKey = `session:${authUser.id}:${Date.now()}`;
-    const sessionData = {
-      user_id: authUser.id,
-      timestamp: new Date().toISOString(),
-    };
-    await kv.set(sessionKey, JSON.stringify(sessionData));
-    
+
+    const resolvedCountry =
+      resolveCountryCode((name) => c.req.header(name) ?? null, user.country_code ?? undefined) ??
+      user.country_code ??
+      'ZZ';
+
+    if (user.country_code !== resolvedCountry) {
+      user.country_code = resolvedCountry;
+      await updateUser(user);
+    }
+
+    await trackUserSession(authUser.id, user.country_code ?? resolvedCountry, new Date().toISOString());
+
     return c.json({
       user: {
         id: user.id,
         energy: user.energy,
         boost_level: user.boost_level,
         boost_expires_at: user.boost_expires_at,
+        country_code: user.country_code ?? resolvedCountry,
       }
     });
   } catch (error) {
@@ -319,18 +398,18 @@ app.get("/make-server-0f597298/ads/next", async (c) => {
 app.post("/make-server-0f597298/ads/complete", async (c) => {
   try {
     const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
+
     if (!authUser) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
-    
+
     const body = await c.req.json();
     const { ad_id, wallet_address: walletAddressFromBody } = body;
-    
+
     if (!ad_id) {
       return c.json({ error: 'Missing ad_id' }, 400);
     }
-    
+
     // Get user
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -339,62 +418,77 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
     );
 
     const user = await getOrCreateUser(authUser.id, walletAddress);
-    
+
+    const resolvedCountry =
+      resolveCountryCode((name) => c.req.header(name) ?? null, user.country_code ?? undefined) ??
+      user.country_code ??
+      'ZZ';
+
+    if (user.country_code !== resolvedCountry) {
+      user.country_code = resolvedCountry;
+      await updateUser(user);
+    }
+
     // Check cooldown
     if (user.last_watch_at) {
       const lastWatch = new Date(user.last_watch_at);
       const now = new Date();
       const secondsSinceLastWatch = (now.getTime() - lastWatch.getTime()) / 1000;
-      
+
       if (secondsSinceLastWatch < AD_COOLDOWN_SECONDS) {
         const remainingCooldown = Math.ceil(AD_COOLDOWN_SECONDS - secondsSinceLastWatch);
-        return c.json({ 
-          error: 'Cooldown active', 
-          cooldown_remaining: remainingCooldown 
+        return c.json({
+          error: 'Cooldown active',
+          cooldown_remaining: remainingCooldown,
         }, 429);
       }
     }
-    
-    // Check daily limit
+
+    // Check daily limit via KV counter
     const today = new Date().toISOString().split('T')[0];
     const dailyCountKey = `watch_count:${authUser.id}:${today}`;
     const dailyCountStr = await kv.get(dailyCountKey);
     const dailyCount = dailyCountStr ? parseInt(dailyCountStr) : 0;
-    
+
     if (dailyCount >= DAILY_VIEW_LIMIT) {
       return c.json({ error: 'Daily limit reached' }, 429);
     }
-    
+
     // Calculate reward with boost multiplier
     const multiplier = boostMultiplier(user.boost_level);
     const energyReward = Math.floor(BASE_AD_REWARD * multiplier);
-    
-    // Update user
-    user.energy += energyReward;
-    user.last_watch_at = new Date().toISOString();
-    await updateUser(user);
-    
-    // Update daily count
-    await kv.set(dailyCountKey, String(dailyCount + 1));
-    
-    // Log watch for analytics
-    const watchLogKey = `watch:${authUser.id}:${Date.now()}`;
-    const watchLog = {
-      user_id: authUser.id,
-      ad_id: ad_id,
-      reward: energyReward,
-      base_reward: BASE_AD_REWARD,
-      multiplier: multiplier,
-      created_at: new Date().toISOString(),
-    };
-    await kv.set(watchLogKey, JSON.stringify(watchLog));
-    
+    const nowIso = new Date().toISOString();
+
+    let incrementResult: { user: User; watch_count: number };
+    try {
+      incrementResult = await kv.incrementUserEnergyAndWatchCount({
+        userKey: `user:${authUser.id}`,
+        energyDelta: energyReward,
+        lastWatchAt: nowIso,
+        watchCountKey: dailyCountKey,
+        watchIncrement: 1,
+        dailyLimit: DAILY_VIEW_LIMIT,
+        adId: ad_id,
+        baseReward: BASE_AD_REWARD,
+        multiplier,
+        countryCode: user.country_code ?? null,
+      });
+    } catch (error) {
+      if ((error as { code?: string | null })?.code === 'P0001') {
+        return c.json({ error: 'Daily limit reached' }, 429);
+      }
+      throw error;
+    }
+
+    const updatedUser = incrementResult.user;
+    const updatedWatchCount = incrementResult.watch_count;
+
     return c.json({
       success: true,
       reward: energyReward,
-      new_balance: user.energy,
-      multiplier: multiplier,
-      daily_watches_remaining: DAILY_VIEW_LIMIT - dailyCount - 1,
+      new_balance: updatedUser.energy,
+      multiplier,
+      daily_watches_remaining: Math.max(DAILY_VIEW_LIMIT - updatedWatchCount, 0),
     });
   } catch (error) {
     console.log('Error completing ad watch:', error);
@@ -592,56 +686,104 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
 app.get("/make-server-0f597298/stats", async (c) => {
   try {
     const authUser = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-    
+
     if (!authUser) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
-    
+
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
       c.req.header('X-Wallet-Address'),
     );
 
     const user = await getOrCreateUser(authUser.id, walletAddress);
-    
-    // Get watch logs
-    const watchLogsPrefix = `watch:${authUser.id}:`;
-    const watchLogs = await kv.getByPrefix(watchLogsPrefix);
-    
-    const totalWatches = watchLogs.length;
-    const totalEarned = watchLogs.reduce((sum, log) => {
-      const logData = JSON.parse(log);
-      return sum + (logData.reward || 0);
-    }, 0);
-    
-    // Parse and sort watch logs by timestamp (most recent first)
-    const parsedWatchLogs = watchLogs
-      .map(log => JSON.parse(log))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 20); // Return last 20 sessions
-    
-    // Get session count
-    const sessionPrefix = `session:${authUser.id}:`;
-    const sessions = await kv.getByPrefix(sessionPrefix);
-    const totalSessions = sessions.length;
-    
-    // Get today's watch count
-    const today = new Date().toISOString().split('T')[0];
-    const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kv.get(dailyCountKey);
-    const todayWatches = dailyCountStr ? parseInt(dailyCountStr) : 0;
-    
+
+    const now = new Date();
+    const startOfTodayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+    const [
+      watchHistoryResult,
+      sessionHistoryResult,
+      watchStatsResult,
+      todayStatsResult,
+      sessionStatsResult,
+    ] = await Promise.all([
+      supabase
+        .from('watch_logs')
+        .select('id, user_id, ad_id, reward, base_reward, multiplier, country_code, created_at')
+        .eq('user_id', authUser.id)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('user_sessions')
+        .select('id, country_code, created_at, last_activity_at')
+        .eq('user_id', authUser.id)
+        .order('last_activity_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('watch_logs')
+        .select('total_watches:count(*), total_earned:sum(reward)')
+        .eq('user_id', authUser.id)
+        .maybeSingle(),
+      supabase
+        .from('watch_logs')
+        .select('today_watches:count(*)')
+        .eq('user_id', authUser.id)
+        .gte('created_at', startOfTodayUtc.toISOString())
+        .maybeSingle(),
+      supabase
+        .from('user_sessions')
+        .select('total_sessions:count(*)')
+        .eq('user_id', authUser.id)
+        .maybeSingle(),
+    ]);
+
+    if (watchHistoryResult.error) {
+      console.log('Error fetching watch history:', watchHistoryResult.error);
+      return c.json({ error: 'Failed to fetch stats' }, 500);
+    }
+
+    if (sessionHistoryResult.error) {
+      console.log('Error fetching session history:', sessionHistoryResult.error);
+      return c.json({ error: 'Failed to fetch stats' }, 500);
+    }
+
+    if (watchStatsResult.error) {
+      console.log('Error fetching watch stats:', watchStatsResult.error);
+      return c.json({ error: 'Failed to fetch stats' }, 500);
+    }
+
+    if (todayStatsResult.error) {
+      console.log('Error fetching today stats:', todayStatsResult.error);
+      return c.json({ error: 'Failed to fetch stats' }, 500);
+    }
+
+    if (sessionStatsResult.error) {
+      console.log('Error fetching session stats:', sessionStatsResult.error);
+      return c.json({ error: 'Failed to fetch stats' }, 500);
+    }
+
+    const watchTotals = watchStatsResult.data ?? { total_watches: 0, total_earned: 0 };
+    const todayTotals = todayStatsResult.data ?? { today_watches: 0 };
+    const sessionTotals = sessionStatsResult.data ?? { total_sessions: 0 };
+
     return c.json({
-      total_energy: user.energy,
-      total_watches: totalWatches,
-      total_earned: totalEarned,
-      total_sessions: totalSessions,
-      today_watches: todayWatches,
-      daily_limit: DAILY_VIEW_LIMIT,
-      boost_level: user.boost_level,
-      multiplier: boostMultiplier(user.boost_level),
-      boost_expires_at: user.boost_expires_at,
-      watch_history: parsedWatchLogs,
+      totals: {
+        energy: user.energy,
+        watches: Number(watchTotals.total_watches ?? 0),
+        earned: Number(watchTotals.total_earned ?? 0),
+        sessions: Number(sessionTotals.total_sessions ?? 0),
+        today_watches: Number(todayTotals.today_watches ?? 0),
+        daily_limit: DAILY_VIEW_LIMIT,
+      },
+      boost: {
+        level: user.boost_level,
+        multiplier: boostMultiplier(user.boost_level),
+        expires_at: user.boost_expires_at,
+      },
+      country_code: user.country_code ?? 'ZZ',
+      watch_history: watchHistoryResult.data ?? [],
+      session_history: sessionHistoryResult.data ?? [],
     });
   } catch (error) {
     console.log('Error fetching stats:', error);

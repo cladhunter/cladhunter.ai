@@ -7,6 +7,7 @@ export interface UserData {
   energy: number;
   boost_level: number;
   boost_expires_at: string | null;
+  country_code: string | null;
 }
 
 export function useUserData() {

@@ -7,6 +7,7 @@ export interface User {
   last_watch_at: string | null;
   boost_expires_at: string | null;
   created_at: string;
+  country_code?: string | null;
 }
 
 export interface Ad {
@@ -18,12 +19,22 @@ export interface Ad {
 }
 
 export interface WatchLog {
+  id?: number;
   user_id: string;
   ad_id: string;
   reward: number;
   base_reward: number;
   multiplier: number;
   created_at: string;
+  country_code?: string | null;
+}
+
+export interface SessionLog {
+  id?: number;
+  user_id?: string;
+  country_code?: string | null;
+  created_at: string;
+  last_activity_at: string;
 }
 
 export interface Order {
@@ -67,17 +78,27 @@ export interface OrderCreateResponse {
   duration_days: number;
 }
 
-export interface UserStatsResponse {
-  total_energy: number;
-  total_watches: number;
-  total_earned: number;
-  total_sessions: number;
+export interface UserStatsTotals {
+  energy: number;
+  watches: number;
+  earned: number;
+  sessions: number;
   today_watches: number;
   daily_limit: number;
-  boost_level: number;
+}
+
+export interface UserStatsBoost {
+  level: number;
   multiplier: number;
-  boost_expires_at: string | null;
+  expires_at: string | null;
+}
+
+export interface UserStatsResponse {
+  totals: UserStatsTotals;
+  boost: UserStatsBoost;
+  country_code: string | null;
   watch_history: WatchLog[];
+  session_history: SessionLog[];
 }
 
 // Partner Rewards Types
