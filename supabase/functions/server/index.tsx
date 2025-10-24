@@ -3,8 +3,6 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
-import { partnerRewards } from "../../../config/partners.ts";
-
 const kvStore = (globalThis as Record<string, unknown> & {
   __kvOverride?: typeof kv;
 }).__kvOverride ?? kv;
@@ -18,25 +16,6 @@ const isKvErrorCode = (error: unknown, code: string) =>
   );
 
 const app = new Hono().basePath('/make-server-0f597298');
-
-type PartnerConfig = {
-  id: string;
-  name: string;
-  reward: number;
-  active: boolean;
-};
-
-const partnerConfigMap = new Map<string, PartnerConfig>(
-  partnerRewards.map((partner) => [
-    partner.id,
-    {
-      id: partner.id,
-      name: partner.name,
-      reward: partner.reward,
-      active: partner.active,
-    },
-  ]),
-);
 
 // Types
 interface User {
@@ -389,108 +368,7 @@ app.get("/ads/next", async (c) => {
   }
 });
 
-// Complete ad watch
-app.post("/ads/complete", async (c) => {
-  try {
-    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-
-    if (!authResult.ok) {
-      return c.json({ error: authResult.message }, authResult.status);
-    }
-
-    const authUser = authResult.user;
-    
-    const body = await c.req.json();
-    const { ad_id, wallet_address: walletAddressFromBody } = body;
-    
-    if (!ad_id) {
-      return c.json({ error: 'Missing ad_id' }, 400);
-    }
-    
-    // Get user
-    const walletAddress = resolveWalletAddressForRequest(
-      authUser.id,
-      c.req.header('X-Wallet-Address'),
-      walletAddressFromBody,
-    );
-
-    const user = await getOrCreateUser(authUser.id, walletAddress);
-    
-    // Check cooldown
-    if (user.last_watch_at) {
-      const lastWatch = new Date(user.last_watch_at);
-      const now = new Date();
-      const secondsSinceLastWatch = (now.getTime() - lastWatch.getTime()) / 1000;
-      
-      if (secondsSinceLastWatch < AD_COOLDOWN_SECONDS) {
-        const remainingCooldown = Math.ceil(AD_COOLDOWN_SECONDS - secondsSinceLastWatch);
-        return c.json({ 
-          error: 'Cooldown active', 
-          cooldown_remaining: remainingCooldown 
-        }, 429);
-      }
-    }
-    
-    // Check daily limit
-    const today = new Date().toISOString().split('T')[0];
-    const dailyCountKey = `watch_count:${authUser.id}:${today}`;
-    const dailyCountStr = await kvStore.get(dailyCountKey);
-    const dailyCount = dailyCountStr ? parseInt(dailyCountStr) : 0;
-
-    if (dailyCount >= DAILY_VIEW_LIMIT) {
-      return c.json({ error: 'Daily limit reached' }, 429);
-    }
-
-    // Calculate reward with boost multiplier
-    const multiplier = boostMultiplier(user.boost_level);
-    const energyReward = Math.floor(BASE_AD_REWARD * multiplier);
-    const nowIso = new Date().toISOString();
-
-    let incrementResult: { user: User; watch_count: number };
-    try {
-      incrementResult = await kvStore.incrementUserEnergyAndWatchCount<User>({
-        userKey: buildUserKey(authUser.id),
-        energyDelta: energyReward,
-        lastWatchAt: nowIso,
-        watchCountKey: dailyCountKey,
-        watchIncrement: 1,
-        dailyLimit: DAILY_VIEW_LIMIT,
-      });
-    } catch (error) {
-      if (isKvErrorCode(error, 'P0001')) {
-        return c.json({ error: 'Daily limit reached' }, 429);
-      }
-      throw error;
-    }
-
-    const updatedUser = incrementResult.user;
-    const updatedWatchCount = incrementResult.watch_count;
-
-    // Log watch for analytics
-    const watchLogKey = `watch:${authUser.id}:${Date.now()}`;
-    const watchLog = {
-      user_id: authUser.id,
-      ad_id: ad_id,
-      reward: energyReward,
-      base_reward: BASE_AD_REWARD,
-      multiplier: multiplier,
-      created_at: new Date().toISOString(),
-    };
-    await kvStore.set(watchLogKey, JSON.stringify(watchLog));
-    
-    return c.json({
-      success: true,
-      reward: energyReward,
-      new_balance: updatedUser.energy,
-      multiplier: multiplier,
-      daily_watches_remaining: Math.max(DAILY_VIEW_LIMIT - updatedWatchCount, 0),
-    });
-  } catch (error) {
-    console.log('Error completing ad watch:', error);
-    return c.json({ error: 'Failed to complete ad watch' }, 500);
-  }
-});
-
+// Complete ad watch handled via database RPC (see public.complete_ad_watch)
 // Create boost order
 app.post("/orders/create", async (c) => {
   try {
@@ -784,87 +662,7 @@ app.get("/rewards/status", async (c) => {
   }
 });
 
-// Claim partner reward
-app.post("/rewards/claim", async (c) => {
-  try {
-    const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
-
-    if (!authResult.ok) {
-      return c.json({ error: authResult.message }, authResult.status);
-    }
-
-    const authUser = authResult.user;
-    
-    const body = await c.req.json();
-    const { partner_id, wallet_address: walletAddressFromBody } = body;
-
-    if (!partner_id || typeof partner_id !== 'string') {
-      return c.json({ error: 'Missing or invalid partner_id' }, 400);
-    }
-
-    const partnerConfig = partnerConfigMap.get(partner_id);
-
-    if (!partnerConfig || !partnerConfig.active) {
-      return c.json({ error: 'Partner not found' }, 404);
-    }
-
-    // Check if already claimed
-    // Get partner config from body (frontend will send it)
-    const { partner_name, reward_amount } = body;
-
-    if (!reward_amount || typeof reward_amount !== 'number') {
-      return c.json({ error: 'Invalid reward amount' }, 400);
-    }
-    
-    // Get user
-    const walletAddress = resolveWalletAddressForRequest(
-      authUser.id,
-      c.req.header('X-Wallet-Address'),
-      walletAddressFromBody,
-    );
-
-    await getOrCreateUser(authUser.id, walletAddress);
-
-    const claim = {
-      partner_id: partner_id,
-      user_id: authUser.id,
-      reward: rewardAmount,
-      claimed_at: new Date().toISOString(),
-    };
-
-    let claimResult: { user: User };
-    const claimKey = `reward_claim:${authUser.id}:${partner_id}`;
-    try {
-      claimResult = await kvStore.claimPartnerRewardAtomic<User, typeof claim>({
-        userKey: buildUserKey(authUser.id),
-        energyDelta: reward_amount,
-        claimKey,
-        claimValue: claim,
-      });
-    } catch (error) {
-      if (isKvErrorCode(error, '23505')) {
-        return c.json({ error: 'Reward already claimed' }, 400);
-      }
-      throw error;
-    }
-
-    const claimedUser = claimResult.user;
-
-    // Log for analytics
-    const rewardLogKey = `reward_log:${authUser.id}:${Date.now()}`;
-    await kvStore.set(rewardLogKey, JSON.stringify(claim));
-
-    return c.json({
-      success: true,
-      reward: reward_amount,
-      new_balance: claimedUser.energy,
-      partner_name: partner_name || 'Partner',
-    });
-  } catch (error) {
-    console.log('Error claiming reward:', error);
-    return c.json({ error: 'Failed to claim reward' }, 500);
-  }
-});
+// Claim partner reward handled via database RPC (see public.claim_partner_reward_v2)
 
 Deno.serve(app.fetch);
 

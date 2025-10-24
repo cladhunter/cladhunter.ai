@@ -9,7 +9,7 @@ import type { UserStatsResponse } from '../types';
 
 export function StatsScreen() {
   const { user } = useAuth();
-  const { makeRequest } = useApi();
+  const { invokeEdgeFunction } = useApi();
   const [stats, setStats] = useState<UserStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,13 +26,7 @@ export function StatsScreen() {
       }
 
       setLoading(true);
-      const data = await makeRequest<UserStatsResponse>(
-        '/stats',
-        { method: 'GET' },
-        user.accessToken,
-        user.id,
-        user.address
-      );
+      const data = await invokeEdgeFunction<UserStatsResponse>('/stats', { method: 'GET' });
 
       if (data && isActive) {
         setStats(data);
@@ -48,7 +42,7 @@ export function StatsScreen() {
     return () => {
       isActive = false;
     };
-  }, [user, makeRequest]);
+  }, [user, invokeEdgeFunction]);
 
   const totalMined = stats?.total_earned || 0;
   const totalWatches = stats?.total_watches || 0;

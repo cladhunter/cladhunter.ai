@@ -1,85 +1,117 @@
 import { useState, useCallback } from 'react';
-import { API_BASE_URL, getAuthHeaders } from '../utils/supabase/client';
-import { publicAnonKey } from '../utils/supabase/info';
+import { ensureSupabaseAuth, getSupabaseClient } from '../utils/supabase/client';
+import { callRpcFunction, claimPartnerRewardRpc, completeAdWatchRpc } from '../utils/supabase/rpc';
+
+function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const err = error as { message: string };
+    return new Error(err.message || 'Unknown error occurred');
+  }
+
+  return new Error('Unknown error occurred');
+}
 
 export function useApi() {
+  const supabase = getSupabaseClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const formatUserIdForHeader = useCallback((userId: string) => {
-    const trimmed = userId.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    if (trimmed.startsWith('anon_') || trimmed.startsWith('ton_')) {
-      return trimmed;
-    }
-
-    const sanitized = trimmed.replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!sanitized) {
-      return null;
-    }
-
-    return `ton_${sanitized}`;
-  }, []);
-
-  const makeRequest = useCallback(async <T,>(
-    endpoint: string,
-    options: RequestInit = {},
-    accessToken?: string,
-    userId?: string,
-    walletAddress?: string
-  ): Promise<T | null> => {
+  const callRpc = useCallback(async <T,>(
+    functionName: string,
+    params?: Record<string, unknown>,
+  ): Promise<T> => {
     setLoading(true);
     setError(null);
 
     try {
-      const url = `${API_BASE_URL}${endpoint}`;
-      const baseHeaders = new Headers(
-        getAuthHeaders(accessToken || publicAnonKey),
-      );
+      const result = await callRpcFunction<T>(functionName, params, supabase);
+      return result;
+    } catch (err) {
+      const formatted = toError(err);
+      setError(formatted.message);
+      throw formatted;
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
 
-      if (userId && (!accessToken || accessToken === '')) {
-        const headerUserId = formatUserIdForHeader(userId);
-        if (headerUserId) {
-          baseHeaders.set('X-User-ID', headerUserId);
-        }
-      }
+  const invokeEdgeFunction = useCallback(async <T,>(
+    endpoint: string,
+    options: {
+      method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+      body?: Record<string, unknown> | undefined;
+      headers?: Record<string, string>;
+    } = {},
+  ): Promise<T> => {
+    setLoading(true);
+    setError(null);
 
-      if (walletAddress) {
-        baseHeaders.set('X-Wallet-Address', walletAddress);
-      }
-
-      const requestHeaders = new Headers(baseHeaders);
-      if (options.headers) {
-        const optionHeaders = new Headers(options.headers);
-        optionHeaders.forEach((value, key) => {
-          requestHeaders.set(key, value);
-        });
-      }
-
-      const response = await fetch(url, {
-        ...options,
-        headers: requestHeaders,
+    try {
+      await ensureSupabaseAuth();
+      const { data, error: invokeError } = await supabase.functions.invoke(`make-server-0f597298${endpoint}`, {
+        method: options.method ?? 'GET',
+        body: options.body,
+        headers: options.headers,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `Request failed with status ${response.status}`);
+      if (invokeError) {
+        throw toError(invokeError);
       }
 
-      setLoading(false);
-      return data as T;
+      return (data ?? null) as T;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-      console.error(`API Error (${endpoint}):`, errorMessage);
-      setError(errorMessage);
+      const formatted = toError(err);
+      setError(formatted.message);
+      throw formatted;
+    } finally {
       setLoading(false);
-      return null;
     }
-  }, [formatUserIdForHeader]);
+  }, [supabase]);
 
-  return { makeRequest, loading, error };
+  const completeAdWatch = useCallback(async <T = unknown>(
+    payload: { ad_id: string; wallet_address?: string | null }
+  ): Promise<T> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await completeAdWatchRpc<T>(payload, supabase);
+      return result;
+    } catch (err) {
+      const formatted = toError(err);
+      setError(formatted.message);
+      throw formatted;
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
+
+  const claimPartnerReward = useCallback(async <T = unknown>(
+    payload: { partner_id: string; wallet_address?: string | null }
+  ): Promise<T> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await claimPartnerRewardRpc<T>(payload, supabase);
+      return result;
+    } catch (err) {
+      const formatted = toError(err);
+      setError(formatted.message);
+      throw formatted;
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
+
+  return {
+    loading,
+    error,
+    callRpc,
+    invokeEdgeFunction,
+    completeAdWatch,
+    claimPartnerReward,
+  };
 }

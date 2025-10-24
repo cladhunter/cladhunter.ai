@@ -14,13 +14,6 @@ import { boostMultiplier } from '../config/economy';
 import { getRandomAd, type AdCreative } from '../config/ads';
 import { TonConnectButton } from './TonConnectButton';
 
-interface AdResponse {
-  id: string;
-  url: string;
-  reward: number;
-  type: string;
-}
-
 interface AdCompleteResponse {
   success: boolean;
   reward: number;
@@ -32,23 +25,21 @@ interface AdCompleteResponse {
 export function MiningScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
-  const { makeRequest } = useApi();
+  const { completeAdWatch } = useApi();
   const { isConnected } = useTonConnect();
 
   const [isMining, setIsMining] = useState(false);
   const [miningProgress, setMiningProgress] = useState(0);
-  const [currentAd, setCurrentAd] = useState<AdResponse | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [currentAdCreative, setCurrentAdCreative] = useState<AdCreative | null>(null);
 
   const isMiningDisabled = !isConnected || isMining || cooldownRemaining > 0;
 
-  // Cooldown timer
   useEffect(() => {
     if (cooldownRemaining > 0) {
       const timer = setTimeout(() => {
-        setCooldownRemaining(cooldownRemaining - 1);
+        setCooldownRemaining((value) => Math.max(value - 1, 0));
       }, 1000);
       return () => clearTimeout(timer);
     }
@@ -64,11 +55,8 @@ export function MiningScreen() {
 
     if (!user) return;
 
-    // Get a random ad creative
     const adCreative = getRandomAd();
     setCurrentAdCreative(adCreative);
-    
-    // Open ad modal
     setIsAdModalOpen(true);
   };
 
@@ -78,12 +66,11 @@ export function MiningScreen() {
     setIsMining(true);
     setMiningProgress(0);
 
-    // Simulate mining progress
     const interval = setInterval(() => {
       setMiningProgress((prev) => {
         if (prev >= 100) {
           clearInterval(interval);
-          completeAdWatch(currentAdCreative.id);
+          completeAd(currentAdCreative.id);
           return 100;
         }
         return prev + 2;
@@ -91,44 +78,33 @@ export function MiningScreen() {
     }, 100);
   };
 
-  const completeAdWatch = async (adId: string) => {
+  const completeAd = async (adId: string) => {
     if (!user) return;
 
-    const result = await makeRequest<AdCompleteResponse>(
-      '/ads/complete',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ad_id: adId, wallet_address: user.address }),
-      },
-      user.accessToken,
-      user.id,
-      user.address
-    );
+    try {
+      const result = await completeAdWatch<AdCompleteResponse>({
+        ad_id: adId,
+        wallet_address: user.address,
+      });
 
-    setIsMining(false);
-    setMiningProgress(0);
-    setCurrentAd(null);
-
-    if (result) {
       const multiplierText = result.multiplier > 1 ? ` (x${result.multiplier})` : '';
       toast.success(`+${result.reward} 🆑 mined successfully${multiplierText}!`);
-      
-      // Refresh balance
+
       await refreshBalance();
-      
-      // Set cooldown
       setCooldownRemaining(30);
-      
-      // Show remaining watches
+
       if (result.daily_watches_remaining <= 10) {
         toast(`${result.daily_watches_remaining} ad views remaining today`, {
           duration: 3000,
         });
       }
-    } else {
-      // Check if it's a cooldown error
-      setCooldownRemaining(30);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to complete ad watch';
+      toast.error(message);
+    } finally {
+      setIsMining(false);
+      setMiningProgress(0);
+      setCurrentAdCreative(null);
     }
   };
 
@@ -148,7 +124,6 @@ export function MiningScreen() {
 
   return (
     <div className="flex flex-col items-center px-4 pt-6 pb-24 min-h-screen">
-      {/* Header */}
       <div className="text-center mb-6">
         <h1 className="text-xl tracking-wider mb-2 text-[#FF0033] uppercase">
           CLADHUNTER 🆑
@@ -163,7 +138,6 @@ export function MiningScreen() {
         )}
       </div>
 
-      {/* Wallet connect prompt */}
       {!isConnected && (
         <GlassCard className="w-full mb-6 p-4 border border-[#0098EA]/30 bg-[#0098EA]/10">
           <p className="text-[#0098EA] text-xs uppercase tracking-wider text-center mb-3">
@@ -173,7 +147,6 @@ export function MiningScreen() {
         </GlassCard>
       )}
 
-      {/* Boost Info */}
       {userData && userData.boost_level > 0 && (
         <BoostInfo
           boostLevel={userData.boost_level}
@@ -182,7 +155,6 @@ export function MiningScreen() {
         />
       )}
 
-      {/* Mining Button */}
       <div className="relative mb-6 flex-shrink-0">
         <motion.button
           onClick={handleStartMining}
@@ -198,132 +170,29 @@ export function MiningScreen() {
                     '0 0 40px rgba(255,0,51,0.8)',
                     '0 0 20px rgba(255,0,51,0.5)',
                   ],
+                  transition: { duration: 1.5, repeat: Infinity },
                 }
               : {}
           }
-          transition={{
-            boxShadow: {
-              duration: 2,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            },
-          }}
         >
-          <div className="text-center px-4">
-            {!isConnected ? (
-              <>
-                <p className="text-[#FF0033] uppercase tracking-widest mb-2">
-                  CONNECT WALLET
-                </p>
-                <p className="text-white/60 text-xs uppercase">TO START MINING</p>
-              </>
-            ) : cooldownRemaining > 0 ? (
-              <>
-                <p className="text-[#FF0033]/60 uppercase tracking-widest mb-2">
-                  COOLDOWN
-                </p>
-                <p className="text-white/60 text-xl">{cooldownRemaining}s</p>
-              </>
-            ) : (
-              <>
-                <p className="text-[#FF0033] uppercase tracking-widest mb-2">
-                  {isMining ? 'MINING ACTIVE...' : 'START MINING'}
-                </p>
-                <p className="text-white/60 text-xs uppercase">(WATCH AD)</p>
-              </>
-            )}
+          <div className="text-center">
+            <p className="text-white/60 text-xs uppercase tracking-wider mb-2">Start Mining</p>
+            <p className="text-4xl font-semibold text-white">{isMining ? `${miningProgress}%` : 'GO'}</p>
+            <p className="text-white/30 text-[10px] uppercase tracking-widest mt-2">
+              Tap to watch ad & earn
+            </p>
           </div>
         </motion.button>
-
-        {/* Progress Ring */}
-        {isMining && (
-          <svg className="absolute inset-0 w-56 h-56 sm:w-64 sm:h-64 -rotate-90 pointer-events-none" viewBox="0 0 256 256">
-            <circle
-              cx="128"
-              cy="128"
-              r="125"
-              fill="none"
-              stroke="rgba(255,0,51,0.2)"
-              strokeWidth="3"
-            />
-            <motion.circle
-              cx="128"
-              cy="128"
-              r="125"
-              fill="none"
-              stroke="#FF0033"
-              strokeWidth="3"
-              strokeLinecap="round"
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: miningProgress / 100 }}
-              transition={{ duration: 0.1 }}
-              style={{
-                pathLength: miningProgress / 100,
-                strokeDasharray: '785.4',
-                filter: 'drop-shadow(0 0 4px rgba(255,0,51,0.8))',
-              }}
-            />
-          </svg>
-        )}
       </div>
 
-      {/* Status Text */}
-      {isMining && (
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-[#FF0033] uppercase tracking-wide mb-6"
-        >
-          MINING PROGRESS: {miningProgress}%
-        </motion.p>
-      )}
+      <RewardsSection onRewardClaimed={refreshBalance} />
 
-      {/* Boost Cards */}
-      <div className="w-full">
-        <p className="text-white/40 uppercase text-xs tracking-wider mb-3">BOOSTS</p>
-        <div className="flex flex-col gap-2">
-          {boostCards.map((boost, idx) => {
-            const Icon = boost.icon;
-            return (
-              <GlassCard key={idx} className="px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Icon size={16} className="text-[#FF0033]" />
-                    <div>
-                      <p className="uppercase tracking-wide text-white">
-                        {boost.label}
-                      </p>
-                      <p className="text-[10px] text-white/50 uppercase">
-                        {'duration' in boost && boost.duration}
-                        {'count' in boost && boost.count}
-                        {!('duration' in boost) && !('count' in boost) && 'PREMIUM'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1.5 bg-[#FF0033]/10 rounded text-[10px] text-[#FF0033] uppercase">
-                    PREMIUM
-                  </div>
-                </div>
-              </GlassCard>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Partner Rewards Section */}
-      <div className="w-full mt-6">
-        <RewardsSection onRewardClaimed={refreshBalance} />
-      </div>
-
-      {/* Ad Modal */}
-      {currentAdCreative && (
-        <AdModal
-          isOpen={isAdModalOpen}
-          ad={currentAdCreative}
-          onClose={handleAdModalClose}
-          onAdCompleted={handleAdCompleted}
-        />
-      )}
+      <AdModal
+        isOpen={isAdModalOpen}
+        ad={currentAdCreative ?? getRandomAd()}
+        onClose={handleAdModalClose}
+        onAdCompleted={handleAdCompleted}
+      />
     </div>
   );
 }

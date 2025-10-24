@@ -14,7 +14,7 @@ interface RewardsSectionProps {
 }
 
 export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
-  const { makeRequest } = useApi();
+  const { invokeEdgeFunction, claimPartnerReward } = useApi();
   const { user } = useAuth();
   const [claimedPartners, setClaimedPartners] = useState<string[]>([]);
   const [claiming, setClaiming] = useState<string | null>(null);
@@ -22,7 +22,6 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
 
   const activePartners = getActivePartners();
 
-  // Load claimed rewards status
   useEffect(() => {
     let isActive = true;
 
@@ -38,13 +37,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
       setLoading(true);
 
       try {
-        const response = await makeRequest<RewardStatusResponse>(
-          '/rewards/status',
-          { method: 'GET' },
-          user.accessToken,
-          user.id,
-          user.address
-        );
+        const response = await invokeEdgeFunction<RewardStatusResponse>('/rewards/status', { method: 'GET' });
 
         if (response && isActive) {
           setClaimedPartners(response.claimed_partners);
@@ -63,48 +56,30 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
     return () => {
       isActive = false;
     };
-  }, [user, makeRequest]);
+  }, [user, invokeEdgeFunction]);
 
   async function handleClaimReward(partner: PartnerReward) {
     if (claimedPartners.includes(partner.id) || claiming || !user) return;
 
-    // First, open the partner link
     window.open(partner.url, '_blank');
     hapticFeedback('impact', 'medium');
 
-    // Wait a bit for user to subscribe
     setTimeout(async () => {
       setClaiming(partner.id);
 
       try {
-        const response = await makeRequest<ClaimRewardResponse>(
-          '/rewards/claim',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              partner_id: partner.id,
-              partner_name: partner.name,
-              reward_amount: partner.reward,
-              wallet_address: user.address,
-            }),
-          },
-          user.accessToken,
-          user.id,
-          user.address
-        );
+        const response = await claimPartnerReward<ClaimRewardResponse>({
+          partner_id: partner.id,
+          wallet_address: user.address,
+        });
 
         if (response?.success) {
           setClaimedPartners(prev => [...prev, partner.id]);
-          toast.success(
-            `🎉 ${response.reward} 🆑 earned!`,
-            {
-              description: `Thanks for subscribing to ${response.partner_name}!`,
-            }
-          );
+          toast.success(`🎉 ${response.reward} 🆑 earned!`, {
+            description: `Thanks for subscribing to ${response.partner_name}!`,
+          });
           hapticFeedback('notification', 'success');
 
-          // Refresh balance via callback
           if (onRewardClaimed) {
             onRewardClaimed();
           }
@@ -113,8 +88,8 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           hapticFeedback('notification', 'error');
         }
       } catch (error) {
-        console.error('Error claiming reward:', error);
-        toast.error('Failed to claim reward');
+        const message = error instanceof Error ? error.message : 'Failed to claim reward';
+        toast.error(message);
         hapticFeedback('notification', 'error');
       } finally {
         setClaiming(null);
@@ -198,33 +173,17 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
                         : 'bg-[#FF0033]/10 text-[#FF0033] active:bg-[#FF0033]/20'
                     }
                     disabled:opacity-50
+                    flex items-center gap-2
                   `}
-                  whileTap={{ scale: isClaimed ? 1 : 0.95 }}
                 >
-                  {isClaimed ? (
-                    <div className="flex items-center gap-1">
-                      <Check size={12} />
-                      <span>CLAIMED</span>
-                    </div>
-                  ) : isClaiming ? (
-                    'CLAIMING...'
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <ExternalLink size={10} />
-                      <span>CLAIM</span>
-                    </div>
-                  )}
+                  {isClaimed ? <Check size={12} /> : <ExternalLink size={12} />}
+                  <span>{isClaimed ? 'Claimed' : isClaiming ? 'Claiming...' : 'Claim'}</span>
                 </motion.button>
               </div>
             </GlassCard>
           );
         })}
       </div>
-
-      {/* Info text */}
-      <p className="text-[9px] text-white/30 mt-2 text-center uppercase tracking-wide">
-        Subscribe to partners to earn rewards
-      </p>
     </div>
   );
 }
