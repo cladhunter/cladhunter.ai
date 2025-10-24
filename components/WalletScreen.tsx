@@ -68,7 +68,8 @@ export function WalletScreen() {
       return;
     }
 
-    const referralLink = `https://cladhunter.app/ref/${user.id}`;
+    const referralTarget = user.address || user.id;
+    const referralLink = `https://cladhunter.app/ref/${referralTarget}`;
     navigator.clipboard.writeText(referralLink);
     toast.success('Referral link copied!');
   };
