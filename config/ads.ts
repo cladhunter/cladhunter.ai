@@ -116,20 +116,28 @@ export function getEligibleAds(countryCode?: string | null): AdCreative[] {
   const normalizedCode = countryCode?.trim().toUpperCase() ?? null;
   const withIndex = adCreatives.map((ad, index) => ({ ad, index }));
 
-  const filtered = withIndex.filter(({ ad }) => {
-    if (!ad.countries || ad.countries.length === 0) {
-      return true;
-    }
-    if (!normalizedCode) {
-      return false;
-    }
-    return ad.countries.some((code) => code.toUpperCase() === normalizedCode);
-  });
+  const matching = withIndex.filter(
+    ({ ad }) =>
+      normalizedCode &&
+      Array.isArray(ad.countries) &&
+      ad.countries.some((code) => code.toUpperCase() === normalizedCode),
+  );
+  const generic = withIndex.filter(
+    ({ ad }) => !ad.countries || ad.countries.length === 0,
+  );
 
-  const pool = filtered.length > 0 ? filtered : withIndex;
+  const pool = matching.length > 0 ? [...matching, ...generic] : withIndex;
+
+  const seen = new Set<string>();
 
   return pool
-    .slice()
+    .filter(({ ad }) => {
+      if (seen.has(ad.id)) {
+        return false;
+      }
+      seen.add(ad.id);
+      return true;
+    })
     .sort((a, b) => {
       const priorityDiff = (b.ad.priority ?? 0) - (a.ad.priority ?? 0);
       if (priorityDiff !== 0) {
