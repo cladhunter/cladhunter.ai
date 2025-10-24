@@ -26,6 +26,12 @@ interface ConfirmResponse {
   multiplier: number;
 }
 
+const BASE64_PAYLOAD_REGEX = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+const isValidTonPayload = (value: string | undefined | null): value is string => {
+  return typeof value === 'string' && value.length > 0 && BASE64_PAYLOAD_REGEX.test(value);
+};
+
 const transactions = [
   { type: 'withdrawal', amount: '-20', label: 'WITHDRAWAL', time: '2 days ago' },
   { type: 'bonus', amount: '+10', label: 'DAILY BONUS', time: '3 days ago' },
@@ -102,11 +108,14 @@ export function WalletScreen() {
         setIsSendingTx(true);
         try {
           const amountInNanoTon = Math.floor(orderData.amount * 1_000_000_000).toString();
-          
+          const payloadForWallet = isValidTonPayload(orderData.payload)
+            ? orderData.payload
+            : undefined;
+
           const txResult = await sendTransaction({
             to: orderData.address,
             amount: amountInNanoTon,
-            payload: orderData.payload,
+            ...(payloadForWallet ? { payload: payloadForWallet } : {}),
           });
 
           if (txResult) {
