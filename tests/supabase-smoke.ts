@@ -5,6 +5,8 @@ process.env.PUBLIC_SUPABASE_ANON_KEY = 'public-anon-key';
 delete process.env.SUPABASE_ANON_KEY;
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
+process.env.VITE_TON_MERCHANT_ADDRESS =
+  'UQDw8GgIlOX7SqLJKkpIB2JaOlU5n0g2qGifwtneUb1VMnVt';
 
 const inMemory = new Map<string, string>();
 
@@ -153,6 +155,23 @@ if (initResponse.status !== 200) {
 
 const initData = await initResponse.json();
 console.log('Init response:', initData);
+
+const orderResponse = await app.request('http://localhost/make-server-0f597298/orders/create', {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({ boost_level: 1 }),
+});
+
+if (orderResponse.status !== 200) {
+  throw new Error(`/orders/create failed with status ${orderResponse.status}`);
+}
+
+const orderData = await orderResponse.json();
+console.log('Order create response:', orderData);
+
+if (orderData.address !== process.env.VITE_TON_MERCHANT_ADDRESS) {
+  throw new Error('orders/create did not return the configured merchant address');
+}
 
 const completeResponse = await app.request('http://localhost/make-server-0f597298/ads/complete', {
   method: 'POST',
