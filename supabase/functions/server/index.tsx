@@ -8,7 +8,7 @@ const kvStore = (globalThis as Record<string, unknown> & {
   __kvOverride?: typeof kv;
 }).__kvOverride ?? kv;
 
-const app = new Hono();
+const app = new Hono().basePath('/make-server-0f597298');
 
 // Types
 interface User {
@@ -252,12 +252,12 @@ app.use(
 );
 
 // Health check endpoint
-app.get("/make-server-0f597298/health", (c) => {
+app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
 // Initialize user (called on app load)
-app.post("/make-server-0f597298/user/init", async (c) => {
+app.post("/user/init", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -306,7 +306,7 @@ app.post("/make-server-0f597298/user/init", async (c) => {
 });
 
 // Get user balance
-app.get("/make-server-0f597298/user/balance", async (c) => {
+app.get("/user/balance", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -337,7 +337,7 @@ app.get("/make-server-0f597298/user/balance", async (c) => {
 
 // This endpoint is deprecated - ads are now managed client-side from config/ads.ts
 // Kept for backward compatibility
-app.get("/make-server-0f597298/ads/next", async (c) => {
+app.get("/ads/next", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -360,7 +360,7 @@ app.get("/make-server-0f597298/ads/next", async (c) => {
 });
 
 // Complete ad watch
-app.post("/make-server-0f597298/ads/complete", async (c) => {
+app.post("/ads/complete", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -449,7 +449,7 @@ app.post("/make-server-0f597298/ads/complete", async (c) => {
 });
 
 // Create boost order
-app.post("/make-server-0f597298/orders/create", async (c) => {
+app.post("/orders/create", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -515,7 +515,7 @@ app.post("/make-server-0f597298/orders/create", async (c) => {
 });
 
 // Check order status
-app.get("/make-server-0f597298/orders/:orderId", async (c) => {
+app.get("/orders/:orderId", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -560,7 +560,7 @@ app.get("/make-server-0f597298/orders/:orderId", async (c) => {
 });
 
 // Manually confirm order (for demo purposes - in production, use TON API webhook)
-app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
+app.post("/orders/:orderId/confirm", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -634,7 +634,7 @@ app.post("/make-server-0f597298/orders/:orderId/confirm", async (c) => {
 });
 
 // Get user stats
-app.get("/make-server-0f597298/stats", async (c) => {
+app.get("/stats", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -697,7 +697,7 @@ app.get("/make-server-0f597298/stats", async (c) => {
 });
 
 // Get reward claim status
-app.get("/make-server-0f597298/rewards/status", async (c) => {
+app.get("/rewards/status", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
@@ -735,7 +735,7 @@ app.get("/make-server-0f597298/rewards/status", async (c) => {
 });
 
 // Claim partner reward
-app.post("/make-server-0f597298/rewards/claim", async (c) => {
+app.post("/rewards/claim", async (c) => {
   try {
     const authResult = await getUserFromAuth(c.req.header('Authorization'), c.req.header('X-User-ID'));
 
