@@ -23,7 +23,7 @@ export function useUserData() {
       boost_level: number;
       multiplier: number;
       boost_expires_at: string | null;
-    }>('/user/balance', { method: 'GET' }, user.accessToken, user.id);
+    }>('/user/balance', { method: 'GET' }, user.accessToken, user.id, user.address);
 
     if (data) {
       setUserData((current) =>
@@ -55,9 +55,14 @@ export function useUserData() {
 
       const data = await makeRequest<{ user: UserData }>(
         '/user/init',
-        { method: 'POST' },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet_address: user.address }),
+        },
         user.accessToken,
-        user.id
+        user.id,
+        user.address
       );
 
       if (data && isActive) {

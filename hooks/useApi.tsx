@@ -28,7 +28,8 @@ export function useApi() {
     endpoint: string,
     options: RequestInit = {},
     accessToken?: string,
-    userId?: string
+    userId?: string,
+    walletAddress?: string
   ): Promise<T | null> => {
     setLoading(true);
     setError(null);
@@ -44,6 +45,10 @@ export function useApi() {
         if (headerUserId) {
           baseHeaders.set('X-User-ID', headerUserId);
         }
+      }
+
+      if (walletAddress) {
+        baseHeaders.set('X-Wallet-Address', walletAddress);
       }
 
       const requestHeaders = new Headers(baseHeaders);

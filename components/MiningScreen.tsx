@@ -98,10 +98,12 @@ export function MiningScreen() {
       '/ads/complete',
       {
         method: 'POST',
-        body: JSON.stringify({ ad_id: adId }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ad_id: adId, wallet_address: user.address }),
       },
       user.accessToken,
-      user.id
+      user.id,
+      user.address
     );
 
     setIsMining(false);
