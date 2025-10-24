@@ -12,15 +12,31 @@ const manifestUrl = (() => {
     return explicit;
   }
 
+  const FALLBACK_MANIFEST = 'https://cladhunter.app/tonconnect-manifest.json';
+
   if (typeof window !== 'undefined') {
     try {
-      return new URL('tonconnect-manifest.json', window.location.href).toString();
+      const origin = window.location.origin;
+
+      if (!origin || origin === 'null') {
+        return FALLBACK_MANIFEST;
+      }
+
+      const hostname = new URL(origin).hostname;
+      const isTelegramHost = /(?:appassets|web)\.telegram\.org$/.test(hostname);
+      const isTelegramWebApp = Boolean(window.Telegram?.WebApp);
+
+      if (isTelegramHost || isTelegramWebApp) {
+        return FALLBACK_MANIFEST;
+      }
+
+      return `${origin.replace(/\/$/, '')}/tonconnect-manifest.json`;
     } catch (error) {
       console.error('Failed to resolve TON manifest URL from current location:', error);
     }
   }
 
-  return 'https://cladhunter.app/tonconnect-manifest.json';
+  return FALLBACK_MANIFEST;
 })();
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
