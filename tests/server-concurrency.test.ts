@@ -56,6 +56,10 @@ const setupEnvironment = () => {
       watchCountKey,
       watchIncrement,
       dailyLimit,
+      adId,
+      baseReward,
+      multiplier,
+      countryCode,
     }: any) {
       const userRaw = inMemory.get(userKey);
       if (!userRaw) {
@@ -74,6 +78,19 @@ const setupEnvironment = () => {
       user.last_watch_at = lastWatchAt;
       inMemory.set(userKey, JSON.stringify(user));
       inMemory.set(watchCountKey, JSON.stringify(nextCount));
+      const watchLogKey = `watch:${userKey}:${lastWatchAt}`;
+      inMemory.set(
+        watchLogKey,
+        JSON.stringify({
+          user_id: user.id,
+          ad_id: adId,
+          reward: energyDelta,
+          base_reward: baseReward,
+          multiplier,
+          country_code: countryCode ?? null,
+          created_at: lastWatchAt,
+        }),
+      );
       return { user, watch_count: nextCount };
     },
     async claimPartnerRewardAtomic({ userKey, energyDelta, claimKey, claimValue }: any) {
@@ -103,6 +120,27 @@ const setupEnvironment = () => {
     serve() {
       // no-op for tests
     },
+  };
+
+  const rpcMock = vi.fn(async (fn: string) => {
+    if (fn === 'track_user_session') {
+      return { data: true, error: null };
+    }
+    return { data: null, error: null };
+  });
+
+  const queryBuilder = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  } as const;
+
+  (globalThis as any).__supabaseClientOverride = {
+    rpc: rpcMock,
+    from: vi.fn(() => ({ ...queryBuilder })),
   };
 
   return { inMemory };

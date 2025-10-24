@@ -50,6 +50,10 @@ const inMemory = new Map<string, string>();
     watchCountKey,
     watchIncrement,
     dailyLimit,
+    adId,
+    baseReward,
+    multiplier,
+    countryCode,
   }: any) {
     const userRaw = inMemory.get(userKey);
     if (!userRaw) {
@@ -68,6 +72,19 @@ const inMemory = new Map<string, string>();
     user.last_watch_at = lastWatchAt;
     inMemory.set(userKey, JSON.stringify(user));
     inMemory.set(watchCountKey, JSON.stringify(nextCount));
+    const watchLogKey = `watch:${userKey}:${lastWatchAt}`;
+    inMemory.set(
+      watchLogKey,
+      JSON.stringify({
+        user_id: user.id,
+        ad_id: adId,
+        reward: energyDelta,
+        base_reward: baseReward,
+        multiplier,
+        country_code: countryCode ?? null,
+        created_at: lastWatchAt,
+      }),
+    );
     return { user, watch_count: nextCount };
   },
   async claimPartnerRewardAtomic({ userKey, energyDelta, claimKey, claimValue }: any) {
@@ -97,6 +114,23 @@ const inMemory = new Map<string, string>();
   serve() {
     // Suppress server start during tests
   },
+};
+
+(globalThis as any).__supabaseClientOverride = {
+  rpc: async (fn: string) => {
+    if (fn === 'track_user_session') {
+      return { data: true, error: null };
+    }
+    return { data: null, error: null };
+  },
+  from: () => ({
+    select() { return this; },
+    eq() { return this; },
+    order() { return this; },
+    gte() { return this; },
+    limit: async () => ({ data: [], error: null }),
+    maybeSingle: async () => ({ data: null, error: null }),
+  }),
 };
 
 const { app } = await import('../supabase/functions/server/index.tsx');

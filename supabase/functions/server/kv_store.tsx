@@ -67,6 +67,10 @@ interface IncrementParams {
   watchCountKey: string;
   watchIncrement: number;
   dailyLimit: number;
+  adId: string;
+  baseReward: number;
+  multiplier: number;
+  countryCode?: string | null;
 }
 
 interface IncrementResult<TUser = any> {
@@ -87,6 +91,10 @@ export const incrementUserEnergyAndWatchCount = async <TUser = any>(
       watch_count_key: params.watchCountKey,
       watch_increment: params.watchIncrement,
       daily_limit: params.dailyLimit,
+      watch_ad_id: params.adId,
+      watch_base_reward: params.baseReward,
+      watch_multiplier: params.multiplier,
+      watch_country_code: params.countryCode ?? null,
     },
   );
 

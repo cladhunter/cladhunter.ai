@@ -65,7 +65,7 @@ export function MiningScreen() {
     if (!user) return;
 
     // Get a random ad creative
-    const adCreative = getRandomAd();
+    const adCreative = getRandomAd(userData?.country_code);
     setCurrentAdCreative(adCreative);
     
     // Open ad modal
