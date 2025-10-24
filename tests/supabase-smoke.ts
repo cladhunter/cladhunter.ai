@@ -187,6 +187,7 @@ const rewardClaimResponse = await app.request('http://localhost/make-server-0f59
   headers,
   body: JSON.stringify({
     partner_id: testPartnerId,
+    partner_name: 'Injected Name',
     reward_amount: testPartnerConfig.reward + 9999,
   }),
 });
@@ -200,6 +201,10 @@ console.log('Reward claim response:', rewardClaimData);
 
 if (rewardClaimData.reward !== testPartnerConfig.reward) {
   throw new Error('Reward claim did not use server-configured amount');
+}
+
+if (rewardClaimData.partner_name !== testPartnerConfig.name) {
+  throw new Error('Reward claim did not use server-configured partner name');
 }
 
 const expectedBalanceAfterClaim = completeData.new_balance + testPartnerConfig.reward;
@@ -228,6 +233,7 @@ const inflatedClaimResponse = await app.request('http://localhost/make-server-0f
   headers: secondUserHeaders,
   body: JSON.stringify({
     partner_id: testPartnerId,
+    partner_name: 'Another Injected Name',
     reward_amount: inflatedReward,
   }),
 });
@@ -245,4 +251,8 @@ if (inflatedClaimData.reward !== testPartnerConfig.reward) {
 
 if (inflatedClaimData.new_balance !== testPartnerConfig.reward) {
   throw new Error('Second user balance did not match configured reward after inflated claim attempt');
+}
+
+if (inflatedClaimData.partner_name !== testPartnerConfig.name) {
+  throw new Error('Inflated claim response did not reflect server-configured partner name');
 }

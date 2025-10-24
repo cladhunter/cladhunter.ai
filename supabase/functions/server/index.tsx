@@ -934,14 +934,6 @@ app.post("/rewards/claim", async (c) => {
       return c.json({ error: 'Partner not found' }, 404);
     }
 
-    // Check if already claimed
-    // Get partner config from body (frontend will send it)
-    const { partner_name, reward_amount } = body;
-
-    if (!reward_amount || typeof reward_amount !== 'number') {
-      return c.json({ error: 'Invalid reward amount' }, 400);
-    }
-    
     // Get user
     const walletAddress = resolveWalletAddressForRequest(
       authUser.id,
@@ -951,10 +943,14 @@ app.post("/rewards/claim", async (c) => {
 
     await getOrCreateUser(authUser.id, walletAddress);
 
+    const rewardAmount = partnerConfig.reward;
+    const partnerName = partnerConfig.name ?? 'Partner';
+
     const claim = {
       partner_id: partner_id,
       user_id: authUser.id,
-      reward: reward_amount,
+      reward: rewardAmount,
+      partner_name: partnerName,
       claimed_at: new Date().toISOString(),
     };
 
@@ -963,7 +959,7 @@ app.post("/rewards/claim", async (c) => {
     try {
       claimResult = await kvStore.claimPartnerRewardAtomic<User, typeof claim>({
         userKey: buildUserKey(authUser.id),
-        energyDelta: reward_amount,
+        energyDelta: rewardAmount,
         claimKey,
         claimValue: claim,
       });
@@ -982,9 +978,9 @@ app.post("/rewards/claim", async (c) => {
 
     return c.json({
       success: true,
-      reward: reward_amount,
+      reward: rewardAmount,
       new_balance: claimedUser.energy,
-      partner_name: partner_name || 'Partner',
+      partner_name: partnerName,
     });
   } catch (error) {
     console.log('Error claiming reward:', error);

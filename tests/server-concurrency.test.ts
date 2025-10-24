@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { partnerRewards } from '../config/partners.ts';
 
 const createHeaders = () => ({
   Authorization: 'Bearer public-anon-key',
@@ -212,10 +213,13 @@ describe('supabase edge function concurrency', () => {
 
     expect(initResponse.status).toBe(200);
 
+    const partnerId = 'telegram_cladhunter_official';
+    const partnerConfig = partnerRewards.find((partner) => partner.id === partnerId);
+    expect(partnerConfig).toBeDefined();
     const rewardPayload = {
-      partner_id: 'telegram_cladhunter_official',
-      reward_amount: 1000,
-      partner_name: 'Cladhunter Official',
+      partner_id: partnerId,
+      reward_amount: partnerConfig!.reward * 10,
+      partner_name: 'Injected Partner Name',
     };
 
     const [first, second] = await Promise.all([
@@ -239,7 +243,15 @@ describe('supabase edge function concurrency', () => {
     expect(conflictCount).toBe(1);
 
     const successBody = await responses.find((response) => response.status === 200)!.json();
-    expect(successBody.new_balance).toBe(1000);
+    expect(successBody.reward).toBe(partnerConfig!.reward);
+    expect(successBody.partner_name).toBe(partnerConfig!.name);
+    expect(successBody.new_balance).toBe(partnerConfig!.reward);
+
+    const storedClaimRaw = inMemory.get(`reward_claim:${headers['X-User-ID']!}:${partnerId}`);
+    expect(storedClaimRaw).toBeDefined();
+    const storedClaim = JSON.parse(storedClaimRaw!);
+    expect(storedClaim.reward).toBe(partnerConfig!.reward);
+    expect(storedClaim.partner_name).toBe(partnerConfig!.name);
 
     const conflictBody = await responses.find((response) => response.status === 400)!.json();
     expect(conflictBody.error).toBe('Reward already claimed');
