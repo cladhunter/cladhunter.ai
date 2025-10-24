@@ -14,6 +14,7 @@ interface User {
   last_watch_at: string | null;
   boost_expires_at: string | null;
   created_at: string;
+  wallet_address?: string | null;
 }
 
 interface Ad {
@@ -60,17 +61,40 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Helper to get user from auth token
+function normalizeAnonUserId(userIdHeader: string | null): string | null {
+  if (!userIdHeader) {
+    return null;
+  }
+
+  const trimmed = userIdHeader.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith('anon_') || trimmed.startsWith('ton_')) {
+    return trimmed;
+  }
+
+  const sanitized = trimmed.replace(/[^A-Za-z0-9_-]/g, '');
+  if (!sanitized) {
+    return null;
+  }
+
+  return `ton_${sanitized}`;
+}
+
 async function getUserFromAuth(authHeader: string | null, userIdHeader: string | null): Promise<{ id: string } | null> {
   if (!authHeader) return null;
-  
+
   const token = authHeader.replace('Bearer ', '');
-  
+
   // Check if it's the public anon key (for anonymous users)
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
   if (token === supabaseAnonKey) {
     // For anonymous users, use the user ID from custom header
-    if (userIdHeader && userIdHeader.startsWith('anon_')) {
-      return { id: userIdHeader };
+    const normalizedId = normalizeAnonUserId(userIdHeader);
+    if (normalizedId) {
+      return { id: normalizedId };
     }
     return null;
   }
@@ -86,11 +110,17 @@ async function getUserFromAuth(authHeader: string | null, userIdHeader: string |
 async function getOrCreateUser(userId: string): Promise<User> {
   const userKey = `user:${userId}`;
   const existing = await kv.get(userKey);
-  
+  const walletAddress = userId.startsWith('ton_') ? userId.slice(4) : null;
+
   if (existing) {
-    return JSON.parse(existing) as User;
+    const stored = JSON.parse(existing) as User;
+    if (!stored.wallet_address && walletAddress) {
+      stored.wallet_address = walletAddress;
+      await kv.set(userKey, JSON.stringify(stored));
+    }
+    return stored;
   }
-  
+
   // Create new user
   const newUser: User = {
     id: userId,
@@ -99,8 +129,9 @@ async function getOrCreateUser(userId: string): Promise<User> {
     last_watch_at: null,
     boost_expires_at: null,
     created_at: new Date().toISOString(),
+    wallet_address: walletAddress,
   };
-  
+
   await kv.set(userKey, JSON.stringify(newUser));
   return newUser;
 }
