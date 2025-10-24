@@ -32,10 +32,37 @@ type RpcError = {
 const toKvError = (error: RpcError): KvStoreError =>
   new KvStoreError(error.message, error.code ?? undefined);
 
-const client = () => createClient(
-  Deno.env.get("SUPABASE_URL"),
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
-);
+let cachedClient: ReturnType<typeof createClient> | null = null;
+
+const getEnvOrThrow = (name: string): string => {
+  const value = Deno.env.get(name);
+  if (!value || value.length === 0) {
+    throw new KvStoreError(`Missing environment variable: ${name}`);
+  }
+  return value;
+};
+
+const client = () => {
+  if (!cachedClient) {
+    cachedClient = createClient(
+      getEnvOrThrow("SUPABASE_URL"),
+      getEnvOrThrow("SUPABASE_SERVICE_ROLE_KEY"),
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+        global: {
+          headers: {
+            "X-Client-Info": "cladhunter-kv-store/1.0",
+          },
+        },
+      },
+    );
+  }
+  return cachedClient;
+};
 
 // Set stores a key-value pair in the database.
 export const set = async (key: string, value: any): Promise<void> => {
