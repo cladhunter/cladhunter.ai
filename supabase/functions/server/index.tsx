@@ -291,7 +291,8 @@ async function getOrCreateUser(userId: string, walletAddress?: string | null): P
   const normalizedWallet = normalizeWalletAddress(walletAddress);
 
   if (existing) {
-    const stored = JSON.parse(existing) as User;
+    const stored: User =
+      typeof existing === 'string' ? (JSON.parse(existing) as User) : (existing as User);
     let requiresUpdate = false;
 
     if (!('country_code' in stored) || stored.country_code === undefined) {
@@ -663,7 +664,8 @@ app.get("/orders/:orderId", async (c) => {
       return c.json({ error: 'Order not found' }, 404);
     }
     
-    const order: Order = JSON.parse(orderData);
+    const order: Order =
+      typeof orderData === 'string' ? (JSON.parse(orderData) as Order) : (orderData as Order);
     
     if (order.user_id !== authUser.id) {
       return c.json({ error: 'Unauthorized' }, 403);
@@ -701,7 +703,8 @@ app.post("/orders/:orderId/confirm", async (c) => {
       return c.json({ error: 'Order not found' }, 404);
     }
     
-    const order: Order = JSON.parse(orderData);
+    const order: Order =
+      typeof orderData === 'string' ? (JSON.parse(orderData) as Order) : (orderData as Order);
     
     if (order.user_id !== authUser.id) {
       return c.json({ error: 'Unauthorized' }, 403);
@@ -892,7 +895,8 @@ app.get("/rewards/status", async (c) => {
     
     // Extract partner IDs from keys
     const claimedPartners = claimedRewards.map(value => {
-      const claim = JSON.parse(value);
+      const claim =
+        typeof value === 'string' ? (JSON.parse(value) as { partner_id: string }) : value;
       return claim.partner_id;
     });
     
