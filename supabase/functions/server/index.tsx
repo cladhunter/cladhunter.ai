@@ -3,6 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
+import { partnerRewards } from "../../../config/partners.ts";
 
 const kvStore = (globalThis as Record<string, unknown> & {
   __kvOverride?: typeof kv;
@@ -17,6 +18,25 @@ const isKvErrorCode = (error: unknown, code: string) =>
   );
 
 const app = new Hono().basePath('/make-server-0f597298');
+
+type PartnerConfig = {
+  id: string;
+  name: string;
+  reward: number;
+  active: boolean;
+};
+
+const partnerConfigMap = new Map<string, PartnerConfig>(
+  partnerRewards.map((partner) => [
+    partner.id,
+    {
+      id: partner.id,
+      name: partner.name,
+      reward: partner.reward,
+      active: partner.active,
+    },
+  ]),
+);
 
 // Types
 interface User {
@@ -777,11 +797,17 @@ app.post("/rewards/claim", async (c) => {
     
     const body = await c.req.json();
     const { partner_id, wallet_address: walletAddressFromBody } = body;
-    
+
     if (!partner_id || typeof partner_id !== 'string') {
       return c.json({ error: 'Missing or invalid partner_id' }, 400);
     }
-    
+
+    const partnerConfig = partnerConfigMap.get(partner_id);
+
+    if (!partnerConfig || !partnerConfig.active) {
+      return c.json({ error: 'Partner not found' }, 404);
+    }
+
     // Check if already claimed
     // Get partner config from body (frontend will send it)
     const { partner_name, reward_amount } = body;
@@ -802,7 +828,7 @@ app.post("/rewards/claim", async (c) => {
     const claim = {
       partner_id: partner_id,
       user_id: authUser.id,
-      reward: reward_amount,
+      reward: rewardAmount,
       claimed_at: new Date().toISOString(),
     };
 
