@@ -1,251 +1,115 @@
 /**
- * API Testing Utility
- * Use this in browser console to test backend endpoints
+ * SQL API Testing Utility
+ * Use this in browser console to invoke Supabase SQL RPC functions directly.
  */
 
-import { API_BASE_URL, getAuthHeaders } from './supabase/client';
-import { publicAnonKey } from './supabase/info';
+import {
+  claimReward,
+  completeAdWatch,
+  createOrder,
+  getRewardStatus,
+  getUserBalance,
+  getUserStats,
+  initUser,
+  confirmOrder,
+} from './api/sqlClient';
 
 export class ApiTester {
-  private baseUrl: string;
-  private token: string;
   private userId: string;
+  private walletAddress?: string;
 
-  constructor(token?: string, userId?: string) {
-    this.baseUrl = API_BASE_URL;
-    this.token = token || publicAnonKey;
+  constructor(userId?: string, walletAddress?: string) {
     this.userId = userId || `anon_test_${Date.now()}`;
+    this.walletAddress = walletAddress;
   }
 
-  private getHeaders(): HeadersInit {
-    const headers = getAuthHeaders(this.token);
-    // Add X-User-ID for anonymous users
-    if (this.token === publicAnonKey && this.userId) {
-      return {
-        ...headers,
-        'X-User-ID': this.userId,
-      };
-    }
-    return headers;
+  setWallet(address: string) {
+    this.walletAddress = address;
   }
 
-  /**
-   * Test health check endpoint
-   */
-  async testHealth() {
-    console.log('🏥 Testing health endpoint...');
-    try {
-      const response = await fetch(`${this.baseUrl}/health`);
-      const data = await response.json();
-      console.log('✅ Health check:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Health check failed:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Test user initialization
-   */
   async testUserInit() {
-    console.log('👤 Testing user init...');
-    try {
-      const response = await fetch(`${this.baseUrl}/user/init`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-      });
-      const data = await response.json();
-      console.log('✅ User init:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ User init failed:', error);
-      return null;
-    }
+    console.log('👤 Testing app_init_user...');
+    const response = await initUser({
+      userId: this.userId,
+      walletAddress: this.walletAddress,
+    });
+    console.log('✅ init response:', response);
+    return response;
   }
 
-  /**
-   * Test get balance
-   */
   async testGetBalance() {
-    console.log('💰 Testing get balance...');
-    try {
-      const response = await fetch(`${this.baseUrl}/user/balance`, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
-      const data = await response.json();
-      console.log('✅ Balance:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Get balance failed:', error);
-      return null;
-    }
+    console.log('💰 Testing app_get_user_balance...');
+    const response = await getUserBalance({
+      userId: this.userId,
+      walletAddress: this.walletAddress,
+    });
+    console.log('✅ balance:', response);
+    return response;
   }
 
-  /**
-   * Test get next ad
-   */
-  async testGetNextAd() {
-    console.log('📺 Testing get next ad...');
-    try {
-      const response = await fetch(`${this.baseUrl}/ads/next`, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
-      const data = await response.json();
-      console.log('✅ Next ad:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Get next ad failed:', error);
-      return null;
-    }
+  async testCompleteAd(adId = 'test_ad') {
+    console.log(`📺 Testing app_complete_ad_watch (${adId})...`);
+    const response = await completeAdWatch({
+      userId: this.userId,
+      adId,
+      walletAddress: this.walletAddress,
+    });
+    console.log('✅ ad complete:', response);
+    return response;
   }
 
-  /**
-   * Test complete ad watch
-   */
-  async testCompleteAd(adId: string = 'ad_1') {
-    console.log(`✨ Testing complete ad (${adId})...`);
-    try {
-      const response = await fetch(`${this.baseUrl}/ads/complete`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({ ad_id: adId }),
-      });
-      const data = await response.json();
-      console.log('✅ Ad completed:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Complete ad failed:', error);
-      return null;
-    }
+  async testCreateOrder(boostLevel = 1) {
+    console.log(`🛒 Testing app_create_order (level ${boostLevel})...`);
+    const response = await createOrder({
+      userId: this.userId,
+      boostLevel,
+      walletAddress: this.walletAddress,
+    });
+    console.log('✅ order created:', response);
+    return response;
   }
 
-  /**
-   * Test create order
-   */
-  async testCreateOrder(boostLevel: number = 1) {
-    console.log(`🛒 Testing create order (boost level ${boostLevel})...`);
-    try {
-      const response = await fetch(`${this.baseUrl}/orders/create`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({ boost_level: boostLevel }),
-      });
-      const data = await response.json();
-      console.log('✅ Order created:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Create order failed:', error);
-      return null;
-    }
+  async testConfirmOrder(orderId: string, txHash?: string) {
+    console.log(`✅ Testing app_confirm_order (${orderId})...`);
+    const response = await confirmOrder({
+      userId: this.userId,
+      orderId,
+      txHash,
+    });
+    console.log('✅ order confirmed:', response);
+    return response;
   }
 
-  /**
-   * Test get stats
-   */
   async testGetStats() {
-    console.log('📊 Testing get stats...');
-    try {
-      const response = await fetch(`${this.baseUrl}/stats`, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
-      const data = await response.json();
-      console.log('✅ Stats:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Get stats failed:', error);
-      return null;
+    console.log('📊 Testing app_get_stats...');
+    const response = await getUserStats({ userId: this.userId });
+    console.log('✅ stats:', response);
+    return response;
+  }
+
+  async testRewardStatus() {
+    console.log('🎁 Testing app_get_reward_status...');
+    const response = await getRewardStatus({ userId: this.userId });
+    console.log('✅ reward status:', response);
+    return response;
+  }
+
+  async testClaimReward(partnerId: string, amount: number, partnerName: string) {
+    console.log(`🏆 Testing app_claim_reward (${partnerId})...`);
+    const response = await claimReward({
+      userId: this.userId,
+      partnerId,
+      rewardAmount: amount,
+      partnerName,
+    });
+    console.log('✅ reward claimed:', response);
+    return response;
+  }
+
+  async simulateMining(count = 5) {
+    console.log(`⛏️ Simulating ${count} mining sessions...`);
+    for (let i = 0; i < count; i += 1) {
+      await this.testCompleteAd(`ad_${i + 1}`);
     }
   }
-
-  /**
-   * Run all tests
-   */
-  async runAllTests() {
-    console.log('🚀 Running all API tests...\n');
-    
-    await this.testHealth();
-    console.log('\n');
-    
-    await this.testUserInit();
-    console.log('\n');
-    
-    await this.testGetBalance();
-    console.log('\n');
-    
-    const ad = await this.testGetNextAd();
-    console.log('\n');
-    
-    if (ad?.id) {
-      await this.testCompleteAd(ad.id);
-      console.log('\n');
-    }
-    
-    await this.testGetStats();
-    console.log('\n');
-    
-    await this.testCreateOrder(1);
-    console.log('\n');
-    
-    console.log('✅ All tests completed!');
-  }
-
-  /**
-   * Simulate mining session
-   */
-  async simulateMining(count: number = 5) {
-    console.log(`⛏️ Simulating ${count} mining sessions...\n`);
-    
-    for (let i = 1; i <= count; i++) {
-      console.log(`Session ${i}/${count}`);
-      
-      const ad = await this.testGetNextAd();
-      if (!ad?.id) {
-        console.error('Failed to get ad');
-        break;
-      }
-      
-      // Wait 5 seconds (simulated ad viewing)
-      console.log('⏳ Watching ad...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      const result = await this.testCompleteAd(ad.id);
-      if (result?.success) {
-        console.log(`✅ +${result.reward} 🆑 earned! New balance: ${result.new_balance}\n`);
-      } else {
-        console.error('Failed to complete ad\n');
-        break;
-      }
-      
-      // Wait cooldown (30 seconds)
-      if (i < count) {
-        console.log('⏳ Cooldown (30s)...');
-        await new Promise(resolve => setTimeout(resolve, 30000));
-      }
-    }
-    
-    const stats = await this.testGetStats();
-    console.log('\n📊 Final stats:', stats);
-  }
 }
-
-// Global instance for easy console access
-declare global {
-  interface Window {
-    testApi: ApiTester;
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.testApi = new ApiTester();
-  console.log('🔧 API Tester loaded! Use window.testApi in console.');
-  console.log('Examples:');
-  console.log('  await window.testApi.runAllTests()');
-  console.log('  await window.testApi.testHealth()');
-  console.log('  await window.testApi.simulateMining(3)');
-}
-
-export default ApiTester;
