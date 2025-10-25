@@ -22,7 +22,7 @@ export function useApi() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const execute = useCallback(async <T>(action: () => Promise<T>): Promise<T | null> => {
+  const execute = useCallback(async <T,>(action: () => Promise<T>): Promise<T | null> => {
     setLoading(true);
     setError(null);
 
