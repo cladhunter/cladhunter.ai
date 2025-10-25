@@ -14,7 +14,7 @@ interface RewardsSectionProps {
 }
 
 export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
-  const { makeRequest } = useApi();
+  const { getRewardStatus, claimReward } = useApi();
   const { user } = useAuth();
   const [claimedPartners, setClaimedPartners] = useState<string[]>([]);
   const [claiming, setClaiming] = useState<string | null>(null);
@@ -38,13 +38,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
       setLoading(true);
 
       try {
-        const response = await makeRequest<RewardStatusResponse>(
-          '/rewards/status',
-          { method: 'GET' },
-          user.accessToken,
-          user.id,
-          user.address
-        );
+        const response = await getRewardStatus({ userId: user.id });
 
         if (response && isActive) {
           setClaimedPartners(response.claimed_partners);
@@ -63,7 +57,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
     return () => {
       isActive = false;
     };
-  }, [user, makeRequest]);
+  }, [user, getRewardStatus]);
 
   async function handleClaimReward(partner: PartnerReward) {
     if (claimedPartners.includes(partner.id) || claiming || !user) return;
@@ -77,22 +71,12 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
       setClaiming(partner.id);
 
       try {
-        const response = await makeRequest<ClaimRewardResponse>(
-          '/rewards/claim',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              partner_id: partner.id,
-              partner_name: partner.name,
-              reward_amount: partner.reward,
-              wallet_address: user.address,
-            }),
-          },
-          user.accessToken,
-          user.id,
-          user.address
-        );
+        const response = await claimReward({
+          userId: user.id,
+          partnerId: partner.id,
+          rewardAmount: partner.reward,
+          partnerName: partner.name,
+        });
 
         if (response?.success) {
           setClaimedPartners(prev => [...prev, partner.id]);

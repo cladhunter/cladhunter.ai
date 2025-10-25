@@ -25,9 +25,9 @@
 ```
 Frontend (React + TypeScript)
     ↓
-Supabase Edge Functions (Hono Server)
+Supabase SQL Functions (Postgres RPC)
     ↓
-Supabase KV Store (Key-Value Database)
+Postgres Storage (app_* tables)
 ```
 
 ### Tech Stack
@@ -42,10 +42,8 @@ Supabase KV Store (Key-Value Database)
 - Sonner (toasts)
 
 **Backend:**
-- Deno runtime
-- Hono web framework
-- Supabase Edge Functions
-- KV Store for data persistence
+- Supabase SQL functions (Postgres PL/pgSQL)
+- Postgres tables for users, sessions, orders, rewards
 
 **Authentication:**
 - Supabase Auth (optional)
@@ -347,7 +345,7 @@ className="opacity-50 cursor-not-allowed"
 
 ### DO's ✅
 1. Always use `useApi` hook for API calls
-2. Pass `user.accessToken` and `user.id` to `makeRequest`
+2. Call the typed helpers from `useApi` (e.g., `initUser`, `getUserBalance`)
 3. Use `hapticFeedback` for user interactions
 4. Handle loading and error states
 5. Show toast notifications for user feedback
@@ -364,9 +362,9 @@ className="opacity-50 cursor-not-allowed"
 4. Don't add font size/weight classes without request
 5. Don't use `react-konva` (not supported)
 6. Don't mock API calls if backend exists
-7. Don't hardcode API URLs (use `API_BASE_URL`)
+7. Don't hardcode Supabase URLs or tokens
 8. Don't forget error handling
-9. Don't create migration files (KV store only)
+9. Don't alter database schema without adding a migration
 10. Don't expose `SUPABASE_SERVICE_ROLE_KEY` to frontend
 
 ### Code Style
@@ -374,8 +372,8 @@ className="opacity-50 cursor-not-allowed"
 // Use async/await
 async function fetchData() {
   try {
-    const response = await makeRequest('/endpoint');
-    if (response?.data) {
+    const response = await initUser({ userId, walletAddress });
+    if (response?.user) {
       // Handle success
     }
   } catch (error) {
@@ -400,16 +398,18 @@ interface Props {
 
 ## 🧪 Testing & Debugging
 
-### Test API Endpoints
+### Test SQL Functions
 ```typescript
 // Use /utils/test-api.ts for testing
-import { testEndpoint } from './utils/test-api';
+import { ApiTester } from './utils/test-api';
 
-testEndpoint('/user/init');
+const tester = new ApiTester('anon_preview');
+await tester.testUserInit();
+await tester.testGetBalance();
 ```
 
 ### Console Logging
-Backend logs are visible in Supabase Edge Functions logs:
+Backend logs are visible in Supabase SQL function logs (Postgres logs):
 ```typescript
 console.log('Context:', { userId, endpoint, timestamp });
 ```
@@ -435,8 +435,8 @@ const { userData, loading, refreshBalance } = useUserData();
 // useTonConnect - TON wallet connection
 const { wallet, connected, connectWallet, disconnectWallet, sendTransaction } = useTonConnect();
 
-// useApi - API requests
-const { makeRequest, loading, error } = useApi();
+// useApi - typed SQL RPC helpers
+const { initUser, getUserBalance, completeAdWatch, createOrder, confirmOrder, getUserStats } = useApi();
 ```
 
 ### Local State (useState)
@@ -525,15 +525,14 @@ export interface NewEndpointResponse {
 
 **3. Use in Component:**
 ```typescript
-const { makeRequest } = useApi();
+const { createOrder } = useApi();
 const { user } = useAuth();
 
-const response = await makeRequest<NewEndpointResponse>(
-  '/new-endpoint',
-  { method: 'POST', body: JSON.stringify(payload) },
-  user.accessToken,
-  user.id
-);
+const response = await createOrder({
+  userId: user.id,
+  boostLevel: payload.level,
+  walletAddress: user.address,
+});
 ```
 
 ### Adding a New Partner Reward
@@ -569,29 +568,29 @@ export const AD_COOLDOWN_SECONDS = 20; // Changed from 30
 export const DAILY_VIEW_LIMIT = 300; // Changed from 200
 ```
 
-**Don't forget to update server-side constants in `/supabase/functions/server/index.tsx`!**
+**Don't forget to update SQL constants inside `/supabase/migrations/20241020123000_create_sql_api.sql`!**
 
 ---
 
 ## 🐛 Common Issues & Solutions
 
 ### Issue: "Unauthorized" Error
-**Solution:** Ensure `user.accessToken` and `user.id` are passed to `makeRequest`:
+**Solution:** Ensure `useApi` helpers receive the user ID and wallet address:
 ```typescript
-await makeRequest('/endpoint', options, user.accessToken, user.id);
+await completeAdWatch({ userId: user.id, adId: 'ad_123', walletAddress: user.address });
 ```
 
 ### Issue: TON Transaction Not Confirming
 **Solution:** Manually confirm via API or check transaction hash on TON Explorer
 
 ### Issue: Daily Limit Not Resetting
-**Solution:** KV keys are date-based: `watch_count:${userId}:YYYY-MM-DD`
+**Solution:** Check `ad_watch_counts` table entries for the user and date
 
 ### Issue: Boost Expired But Still Active
 **Solution:** Backend checks expiration on `/user/init` call
 
 ### Issue: Partner Reward Already Claimed
-**Solution:** Check KV store: `reward_claim:${userId}:${partnerId}`
+**Solution:** Inspect `partner_reward_claims` table for existing rows
 
 ---
 
@@ -599,7 +598,7 @@ await makeRequest('/endpoint', options, user.accessToken, user.id);
 
 ### Protected Files (DO NOT MODIFY)
 ```
-/supabase/functions/server/kv_store.tsx
+/supabase/migrations/20241020123000_create_sql_api.sql
 /components/figma/ImageWithFallback.tsx
 /utils/supabase/info.tsx
 /Attributions.md
@@ -608,7 +607,7 @@ await makeRequest('/endpoint', options, user.accessToken, user.id);
 
 ### Environment Variables Required
 ```env
-# Backend (Supabase Edge Functions)
+# Backend (Supabase SQL Functions)
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 SUPABASE_ANON_KEY
@@ -682,7 +681,7 @@ import { projectId, publicAnonKey } from './utils/supabase/info';
 ## 📚 Additional Resources
 
 ### Supabase Documentation
-- Edge Functions: https://supabase.com/docs/guides/functions
+- Database Functions: https://supabase.com/docs/guides/database/functions
 - Auth: https://supabase.com/docs/guides/auth
 
 ### TON Documentation
@@ -690,10 +689,10 @@ import { projectId, publicAnonKey } from './utils/supabase/info';
 - TON Center API: https://toncenter.com/api/v2/
 
 ### Libraries Documentation
-- Hono: https://hono.dev/
 - Motion: https://motion.dev/
 - Recharts: https://recharts.org/
 - Lucide: https://lucide.dev/
+- PL/pgSQL: https://www.postgresql.org/docs/current/plpgsql.html
 
 ---
 

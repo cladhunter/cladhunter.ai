@@ -42,7 +42,7 @@ const transactions = [
 export function WalletScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
-  const { makeRequest } = useApi();
+  const { createOrder: createOrderRpc, confirmOrder: confirmOrderRpc } = useApi();
   const { sendTransaction, isConnected, wallet, connect } = useTonConnect();
   
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
@@ -103,17 +103,11 @@ export function WalletScreen() {
 
     try {
       // Create order on server
-      const orderData = await makeRequest<OrderResponse>(
-        '/orders/create',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ boost_level: boostLevel, wallet_address: user.address }),
-        },
-        user.accessToken,
-        user.id,
-        user.address
-      );
+      const orderData = await createOrderRpc({
+        userId: user.id,
+        boostLevel,
+        walletAddress: user.address,
+      });
 
       if (!orderData) {
         toast.error('Unable to create boost order. Please configure the merchant wallet and try again.');
@@ -138,17 +132,11 @@ export function WalletScreen() {
           toast.success('Transaction sent! Confirming boost...');
 
           // Confirm payment on server
-          const result = await makeRequest<ConfirmResponse>(
-            `/orders/${orderData.order_id}/confirm`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tx_hash: txResult.boc, wallet_address: user.address }),
-            },
-            user.accessToken,
-            user.id,
-            user.address
-          );
+          const result = await confirmOrderRpc({
+            userId: user.id,
+            orderId: orderData.order_id,
+            txHash: txResult.boc,
+          });
 
           if (result) {
             toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
@@ -173,17 +161,10 @@ export function WalletScreen() {
   const handleConfirmPayment = async () => {
     if (!user || !pendingOrder) return;
 
-    const result = await makeRequest<ConfirmResponse>(
-      `/orders/${pendingOrder.order_id}/confirm`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet_address: user.address }),
-      },
-      user.accessToken,
-      user.id,
-      user.address
-    );
+    const result = await confirmOrderRpc({
+      userId: user.id,
+      orderId: pendingOrder.order_id,
+    });
 
     if (result) {
       toast.success(`${pendingOrder.boost_name} boost activated! x${result.multiplier} multiplier`);

@@ -9,7 +9,7 @@ import type { UserStatsResponse } from '../types';
 
 export function StatsScreen() {
   const { user } = useAuth();
-  const { makeRequest } = useApi();
+  const { getUserStats } = useApi();
   const [stats, setStats] = useState<UserStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,13 +26,7 @@ export function StatsScreen() {
       }
 
       setLoading(true);
-      const data = await makeRequest<UserStatsResponse>(
-        '/stats',
-        { method: 'GET' },
-        user.accessToken,
-        user.id,
-        user.address
-      );
+      const data = await getUserStats({ userId: user.id });
 
       if (data && isActive) {
         setStats(data);
@@ -48,7 +42,7 @@ export function StatsScreen() {
     return () => {
       isActive = false;
     };
-  }, [user, makeRequest]);
+  }, [user, getUserStats]);
 
   const totals = stats?.totals;
   const totalEnergy = totals?.energy || 0;

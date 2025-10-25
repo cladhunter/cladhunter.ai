@@ -47,20 +47,25 @@ function resolveSupabaseAnonKey(): string {
 const resolvedSupabaseUrl = resolveSupabaseUrl();
 const resolvedAnonKey = resolveSupabaseAnonKey();
 
+function resolveOverride(): SupabaseClient | null {
+  const globalObject = globalThis as Record<string, unknown> & {
+    __supabaseClientOverride?: SupabaseClient;
+  };
+
+  return globalObject.__supabaseClientOverride ?? null;
+}
+
 export function createClient(): SupabaseClient {
+  const override = resolveOverride();
+  if (override) {
+    return override;
+  }
+
   if (!cachedSupabaseClient) {
     cachedSupabaseClient = createSupabaseClient(resolvedSupabaseUrl, resolvedAnonKey);
   }
+
   return cachedSupabaseClient;
 }
 
 export const supabase = createClient();
-
-export function getAuthHeaders(accessToken?: string): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${accessToken || resolvedAnonKey}`,
-  };
-}
-
-export const API_BASE_URL = `${resolvedSupabaseUrl}/functions/v1/make-server-0f597298`;
