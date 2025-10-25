@@ -14,30 +14,14 @@ import { boostMultiplier } from '../config/economy';
 import { getRandomAd, type AdCreative } from '../config/ads';
 import { TonConnectButton } from './TonConnectButton';
 
-interface AdResponse {
-  id: string;
-  url: string;
-  reward: number;
-  type: string;
-}
-
-interface AdCompleteResponse {
-  success: boolean;
-  reward: number;
-  new_balance: number;
-  multiplier: number;
-  daily_watches_remaining: number;
-}
-
 export function MiningScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
-  const { makeRequest } = useApi();
+  const { completeAdWatch: completeAdRpc } = useApi();
   const { isConnected } = useTonConnect();
 
   const [isMining, setIsMining] = useState(false);
   const [miningProgress, setMiningProgress] = useState(0);
-  const [currentAd, setCurrentAd] = useState<AdResponse | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [currentAdCreative, setCurrentAdCreative] = useState<AdCreative | null>(null);
@@ -94,21 +78,14 @@ export function MiningScreen() {
   const completeAdWatch = async (adId: string) => {
     if (!user) return;
 
-    const result = await makeRequest<AdCompleteResponse>(
-      '/ads/complete',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ad_id: adId, wallet_address: user.address }),
-      },
-      user.accessToken,
-      user.id,
-      user.address
-    );
+    const result = await completeAdRpc({
+      userId: user.id,
+      adId,
+      walletAddress: user.address,
+    });
 
     setIsMining(false);
     setMiningProgress(0);
-    setCurrentAd(null);
 
     if (result) {
       const multiplierText = result.multiplier > 1 ? ` (x${result.multiplier})` : '';

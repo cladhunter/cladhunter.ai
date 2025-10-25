@@ -12,19 +12,17 @@ export interface UserData {
 
 export function useUserData() {
   const { user } = useAuth();
-  const { makeRequest } = useApi();
+  const { initUser, getUserBalance } = useApi();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshBalance = useCallback(async () => {
     if (!user) return;
 
-    const data = await makeRequest<{
-      energy: number;
-      boost_level: number;
-      multiplier: number;
-      boost_expires_at: string | null;
-    }>('/user/balance', { method: 'GET' }, user.accessToken, user.id, user.address);
+    const data = await getUserBalance({
+      userId: user.id,
+      walletAddress: user.address,
+    });
 
     if (data) {
       setUserData((current) =>
@@ -38,7 +36,7 @@ export function useUserData() {
           : current,
       );
     }
-  }, [user, makeRequest]);
+  }, [user, getUserBalance]);
 
   useEffect(() => {
     let isActive = true;
@@ -54,17 +52,10 @@ export function useUserData() {
 
       setLoading(true);
 
-      const data = await makeRequest<{ user: UserData }>(
-        '/user/init',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wallet_address: user.address }),
-        },
-        user.accessToken,
-        user.id,
-        user.address
-      );
+      const data = await initUser({
+        userId: user.id,
+        walletAddress: user.address,
+      });
 
       if (data && isActive) {
         setUserData(data.user);
@@ -80,7 +71,7 @@ export function useUserData() {
     return () => {
       isActive = false;
     };
-  }, [user, makeRequest]);
+  }, [user, initUser]);
 
   return { userData, loading, refreshBalance };
 }
